@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Iframe 賽馬小遊戲 — 範例宿主</title>
+  <style>
+    :root {
+      --accent: #0abab5;
+    }
+
+    body {
+      margin: 0;
+      background: #0b0d12;
+      color: #d9e1e8;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, 'Noto Sans TC', sans-serif;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      text-align: center;
+      margin: 18px 8px;
+      color: #e8f0f7;
+    }
+
+    .control-panel {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      margin: 0 12px 12px;
+    }
+
+    .control-panel button {
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid #2a2f3a;
+      background: #12161d;
+      color: #e7eef6;
+      cursor: pointer;
+    }
+
+    .control-panel button:hover {
+      border-color: #3a4150;
+    }
+
+    .control-panel button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    .state-chip {
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid #2a2f3a;
+      background: #0e1218;
+      font-size: 12px;
+    }
+
+    #game-root {
+      position: relative;
+      width: min(96vw, 1000px);
+      aspect-ratio: 16/9;
+      margin: 0 auto 24px;
+      border: 1px solid #2a2f3a;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #0e1014;
+    }
+
+    #game-root iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
+      background: #000;
+    }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(0, 0, 0, .6);
+      backdrop-filter: blur(1px);
+    }
+
+    .loading-overlay.active {
+      display: flex;
+    }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 4px solid #2a2f3a;
+      border-top-color: var(--accent);
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .progress {
+      width: min(72%, 520px);
+      height: 10px;
+      border-radius: 999px;
+      background: #1a1f28;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px #13161c;
+    }
+
+    .progress .bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), #3ab0ff);
+      transition: width .2s ease;
+    }
+
+    .progress-text {
+      font-variant-numeric: tabular-nums;
+      color: #eefbff;
+    }
+
+    .tip {
+      font-size: 12px;
+      opacity: .7;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Iframe 賽馬小遊戲 — 範例宿主</h1>
+
+  <div class="control-panel">
+    <button id="btn-create">建立遊戲</button>
+    <button id="btn-start" disabled>開始遊戲</button>
+    <button id="btn-pause" disabled>暫停遊戲</button>
+    <button id="btn-end" disabled>結束遊戲</button>
+    <span class="state-chip" id="state-readout">state: idle</span>
+  </div>
+
+  <!-- 宿主容器與載入畫面（固定 DOM 結構） -->
+  <div id="game-root" aria-label="遊戲容器">
+    <div class="loading-overlay" id="loading">
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="bar" id="progress-bar"></div>
+      </div>
+      <div class="progress-text" id="progress-text">0%</div>
+      <div class="tip">載入中…若遊戲回報 <code>game:progress</code> 與 <code>game:ready</code>，此處會同步。</div>
+    </div>
+  </div>
+
+  <!-- 1) 工具 -->
+  <script src="./iframe-game-utils.js"></script>
+  <!-- 2) 核心 -->
+  <script src="./iframe-game-core.js"></script>
+  <!-- 3) 賽馬遊戲模組 -->
+  <script src="./racegame.js"></script>
+
+  <!-- 範例使用（可調整或移除） -->
+  <script>
+    const root = document.getElementById('game-root');
+    const stateReadout = document.getElementById('state-readout');
+    const btnCreate = document.getElementById('btn-create');
+    const btnStart = document.getElementById('btn-start');
+    const btnPause = document.getElementById('btn-pause');
+    const btnEnd = document.getElementById('btn-end');
+
+    function refreshUI() {
+      const game = RaceGame.GetGame();
+      const s = game?.state ?? 'idle';
+      stateReadout.textContent = 'state: ' + s;
+      btnStart.disabled = !['ready', 'paused'].includes(s);
+      btnPause.disabled = !(game && ['ready', 'running', 'paused'].includes(s));
+      btnEnd.disabled = !game || s === 'destroyed';
+    }
+
+    btnCreate.addEventListener('click', async () => {
+      await RaceGame.Create({
+        container: root,
+        src: './game.html',
+        targetOrigin: window.location.origin,
+        sandbox: 'allow-scripts allow-same-origin',
+        attributes: { allow: 'fullscreen; gamepad; xr-spatial-tracking; autoplay' },
+        loadingRefs: {
+          overlay: document.getElementById('loading'),
+          bar: document.getElementById('progress-bar'),
+          text: document.getElementById('progress-text'),
+        }
+      });
+      refreshUI();
+    });
+
+    btnStart.addEventListener('click', () => { RaceGame.GetGame()?.StartGame(); refreshUI(); });
+    btnPause.addEventListener('click', () => { RaceGame.GetGame()?.PauseGame(); refreshUI(); });
+    btnEnd.addEventListener('click', () => { RaceGame.GetGame()?.DisposeGame(); refreshUI(); });
+
+    refreshUI();
+  </script>
+</body>
+
+</html>
