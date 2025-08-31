@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Race Game — three.js 版本（iframe 內）</title>
+  <style>
+    html, body { margin:0; height:100%; background:#03060b; color:#fff; font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Noto Sans TC',sans-serif; }
+    #stage { position:absolute; inset:0; display:grid; place-items:center; }
+    canvas { width: min(96vw, 1000px); height: auto; max-height: 90vh; border:1px solid #223; border-radius:12px; background:#000; }
+    .paused { filter: grayscale(.5) brightness(.85); }
+    .banner { position:fixed; left:8px; top:8px; padding:6px 10px; border-radius:8px; font-size:12px; }
+    .ok { background:#0a3; color:#fff; }
+    .err{ background:#a00; color:#fff; }
+    #log { position:absolute; left:8px; bottom:8px; font-size:12px; opacity:.8; white-space:pre-wrap; max-width:60ch; }
+
+    /* UI overlay */
+    #ui-overlay { position:absolute; right:12px; top:12px; display:flex; flex-direction:column; gap:8px; padding:10px; background:#0b0d12cc; border:1px solid #2a2f3a; border-radius:12px; backdrop-filter: blur(6px); }
+    #ui-overlay label { font-size:12px; opacity:.9; }
+    #ui-overlay input[type="text"] { width:220px; padding:6px 8px; border-radius:8px; border:1px solid #2a2f3a; background:#0f141b; color:#e6edf3; }
+    #ui-overlay input[type="range"] { width:220px; }
+    #ui-overlay button { padding:8px 10px; border-radius:10px; border:1px solid #2a2f3a; background:#12161d; color:#e7eef6; cursor:pointer; }
+    .ui-row { display:flex; gap:8px; align-items:center; }
+    .pill { font-size:12px; padding:3px 8px; border-radius:999px; background:#122; border:1px solid #234; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="three-canvas"></canvas>
+    <div id="ui-overlay"></div>
+  </div>
+  <pre id="log"></pre>
+
+  <!-- 入口模組 -->
+  <script type="module" src="./game.js"></script>
+</body>
+</html>

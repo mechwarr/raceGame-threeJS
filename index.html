@@ -162,11 +162,11 @@
   </div>
 
   <!-- 1) 工具 -->
-  <script src="./iframe-game-utils.js"></script>
+  <script src="./frameCore/iframe-game-utils.js"></script>
   <!-- 2) 核心 -->
-  <script src="./iframe-game-core.js"></script>
+  <script src="./frameCore/iframe-game-core.js"></script>
   <!-- 3) 賽馬遊戲模組 -->
-  <script src="./racegame.js"></script>
+  <script src="./demoGame.js"></script>
 
   <!-- 範例使用（可調整或移除） -->
   <script>
@@ -189,7 +189,7 @@
     btnCreate.addEventListener('click', async () => {
       await RaceGame.Create({
         container: root,
-        src: './game.html',
+        src: './game/game.html',
         targetOrigin: window.location.origin,
         sandbox: 'allow-scripts allow-same-origin',
         attributes: { allow: 'fullscreen; gamepad; xr-spatial-tracking; autoplay' },
