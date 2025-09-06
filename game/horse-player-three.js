@@ -8,26 +8,25 @@
 // 需求：three@0.160.0、GLTFLoader（同版號）
 // 使用（public 路徑）：new HorsePlayer(scene, "/horse/", "result.gltf", 7, { fps: 30 })
 // 若貼圖改放 /horse/tex/ 請改：new HorsePlayer(scene, "/horse/", "result.gltf", 7, { textureFolder: "/horse/tex/", fps: 30 })
-
-import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
+import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import { GLTFLoader } from "https://unpkg.com/three@0.165.0/examples/jsm/loaders/GLTFLoader.js";
 
 // === 動畫分段（幀） ===
 const HORSE_RANGES = {
-  Walk:     { from: 0,   to: 159 },
-  Run:      { from: 241, to: 302 },
+  Walk: { from: 0, to: 159 },
+  Run: { from: 241, to: 302 },
   SpeedRun: { from: 304, to: 362 },
-  Idle01:   { from: 365, to: 409 },
-  Idle02:   { from: 410, to: 440 }, // ← 修正名稱
+  Idle01: { from: 365, to: 409 },
+  Idle02: { from: 410, to: 440 }, // ← 修正名稱
 };
 
 // === 已分段 clips 的常見命名 ===
 const CLIP_ALIASES = {
-  Walk:     ["Horse_Walk", "Walk", "walk"],
-  Run:      ["Horse_Run", "Run", "run", "Gallop"],
+  Walk: ["Horse_Walk", "Walk", "walk"],
+  Run: ["Horse_Run", "Run", "run", "Gallop"],
   SpeedRun: ["Horse_SpeedRun", "SpeedRun", "speedrun", "Sprint", "SprintRun"],
-  Idle01:   ["Horse_Idle01", "Idle01", "idle01", "Idle", "idle"],
-  Idle02:   ["Horse_Idle02", "Idle02", "idle02", "Idle_2", "idle_2"],
+  Idle01: ["Horse_Idle01", "Idle01", "idle01", "Idle", "idle"],
+  Idle02: ["Horse_Idle02", "Idle02", "idle02", "Idle_2", "idle_2"],
 };
 
 // 預設 fps（如你的 glTF 是以 30fps 出，維持 30）
@@ -109,7 +108,7 @@ export class HorsePlayer {
         if (obj.material) {
           const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
           for (const m of mats) {
-            if (m.map) m.map.encoding = THREE.sRGBEncoding;
+            if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
             m.needsUpdate = true;
           }
         }
@@ -144,11 +143,11 @@ export class HorsePlayer {
   }
 
   // === 封裝好的播放方法 ===
-  playWalk(loop = true, fade = 0.2)     { return this._play("Walk", loop, fade); }
-  playRun(loop = true, fade = 0.2)      { return this._play("Run", loop, fade); }
+  playWalk(loop = true, fade = 0.2) { return this._play("Walk", loop, fade); }
+  playRun(loop = true, fade = 0.2) { return this._play("Run", loop, fade); }
   playSpeedRun(loop = true, fade = 0.2) { return this._play("SpeedRun", loop, fade); }
-  playIdle01(loop = true, fade = 0.2)   { return this._play("Idle01", loop, fade); }
-  playIdle02(loop = true, fade = 0.2)   { return this._play("Idle02", loop, fade); }
+  playIdle01(loop = true, fade = 0.2) { return this._play("Idle01", loop, fade); }
+  playIdle02(loop = true, fade = 0.2) { return this._play("Idle02", loop, fade); }
 
   stop() {
     if (this._current) {
@@ -209,7 +208,7 @@ export class HorsePlayer {
   // === 內部 ===
   _disposeMaterial(mat) {
     if (!mat) return;
-    for (const key of ["map","normalMap","roughnessMap","metalnessMap","aoMap","emissiveMap","alphaMap"]) {
+    for (const key of ["map", "normalMap", "roughnessMap", "metalnessMap", "aoMap", "emissiveMap", "alphaMap"]) {
       if (mat[key]?.dispose) mat[key].dispose();
     }
     mat.dispose?.();
@@ -226,10 +225,16 @@ export class HorsePlayer {
     const file = playerNoToFile(playerNo);
     const url = this._join(this.textureFolder, file);
 
+    console.log(`[HorsePlayer] 載入貼圖：${url}`);
+
     const tex = await new Promise((resolve, reject) => {
       new THREE.TextureLoader().load(
         url,
-        t => { t.encoding = THREE.sRGBEncoding; t.flipY = false; resolve(t); },
+        t => {
+          t.colorSpace = THREE.SRGBColorSpace;   // ★ 關鍵：貼圖是 sRGB
+          t.flipY = false;
+          resolve(t);
+        },
         undefined,
         reject
       );
@@ -243,11 +248,14 @@ export class HorsePlayer {
   }
 
   _applyMapToMaterial(mat, tex) {
-    if (!mat) return;
-    mat.map = tex;
-    if (mat.map) mat.map.flipY = false;
-    mat.needsUpdate = true;
+  if (!mat) return;
+  mat.map = tex;
+  if (mat.map) {
+    mat.map.flipY = false;
+    mat.map.colorSpace = THREE.SRGBColorSpace; // ★ 關鍵
   }
+  mat.needsUpdate = true;
+}
 
   _join(folder, file) {
     return folder.endsWith("/") ? folder + file : folder + "/" + file;

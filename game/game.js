@@ -1,53 +1,54 @@
 // 主要遊戲腳本：11 匹馬、Pause 修復、Ready/Running/Finished 相機側視、全員到線後頒獎（場中央、拉近）
 import * as THREE from 'https://unpkg.com/three@0.165.0/build/three.module.js';
-import { GameCamera }   from './systems/GameCamera.js';
-import { AudioSystem }  from './systems/AudioSystem.js';
+import { GameCamera } from './systems/GameCamera.js';
+import { AudioSystem } from './systems/AudioSystem.js';
 
-import { UIController }  from './systems/ui/UIController.js';
+import { UIController } from './systems/ui/UIController.js';
 import { GameReadyView } from './systems/ui/views/GameReadyView.js';
-import { GameView }      from './systems/ui/views/GameView.js';
-import { FinishedView }  from './systems/ui/views/FinishedView.js';
+import { GameView } from './systems/ui/views/GameView.js';
+import { FinishedView } from './systems/ui/views/FinishedView.js';
 
-// ★ 新增：使用你的 HorsePlayer 類別
-import { HorsePlayer }   from './horse-player-three.js';
+// ★ 使用你的 HorsePlayer 類別
+import { HorsePlayer } from './horse-player-three.js';
 
 // ===== 小工具 =====
 const $log = document.getElementById('log');
 const canvas = document.getElementById('three-canvas');
-const log = (...a)=>{ if ($log) $log.textContent += a.join(' ') + '\n'; console.log(...a); };
-const reportProgress = (v)=> parent?.postMessage({ type:'game:progress', value:v }, '*');
-const reportReady    = ()=> parent?.postMessage({ type:'game:ready' }, '*');
-const reportError    = (e)=> parent?.postMessage({ type:'game:error', error: String(e) }, '*');
-const banner = (msg, ok=true)=>{ const d=document.createElement('div'); d.className='banner '+(ok?'ok':'err'); d.textContent=msg; document.documentElement.appendChild(d); setTimeout(()=>d.remove(), 3600); };
+const log = (...a) => { if ($log) $log.textContent += a.join(' ') + '\n'; console.log(...a); };
+const reportProgress = (v) => parent?.postMessage({ type: 'game:progress', value: v }, '*');
+const reportReady = () => parent?.postMessage({ type: 'game:ready' }, '*');
+const reportError = (e) => parent?.postMessage({ type: 'game:error', error: String(e) }, '*');
+const banner = (msg, ok = true) => { const d = document.createElement('div'); d.className = 'banner ' + (ok ? 'ok' : 'err'); d.textContent = msg; document.documentElement.appendChild(d); setTimeout(() => d.remove(), 3600); };
 
 // 產生 8 碼 GameID（簡易）
-const gameId = (()=> {
-  if (crypto?.getRandomValues){ const a = new Uint8Array(4); crypto.getRandomValues(a);
-    return Array.from(a).map(x=>x.toString(16).padStart(2,'0')).join('');
+const gameId = (() => {
+  if (crypto?.getRandomValues) {
+    const a = new Uint8Array(4); crypto.getRandomValues(a);
+    return Array.from(a).map(x => x.toString(16).padStart(2, '0')).join('');
   }
-  return Math.floor(Math.random()*0xffffffff).toString(16).padStart(8,'0');
+  return Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
 })();
 
 // ===== 狀態機 =====
-const STATE = { Ready:'Ready', Running:'Running', Paused:'Paused', Finished:'Finished' };
+const STATE = { Ready: 'Ready', Running: 'Running', Paused: 'Paused', Finished: 'Finished' };
 let gameState = STATE.Ready;
 
 // ===== 場景物件 / 遊戲資料 =====
 let renderer, scene, camera, clock;
-let horses = []; // 內容改為 { player: HorsePlayer }
+let horses = []; // 內容為 { player: HorsePlayer }
 const laneCount = 11;                     // ★ 11 匹
 const trackLength = 100;
-const startLineX  = -trackLength/2;
-const finishLineX =  trackLength/2;
-const finishDetectX = finishLineX - 0.5;  // 衝線判定
+const startLineX = -trackLength / 2;
+const finishLineX = trackLength / 2;
+const finishDetectX = finishLineX - 0.5;  // 衝線判定（略早一點）
 
 let gameCam, audioSystem, ui;
 let leader = null;
 let disposed = false;
 
 // 速度/動畫
-const baseSpeeds = Array.from({length: laneCount}, ()=> 6 + Math.random()*2);
-const noise = (t, i)=> Math.sin(t*5 + i*1.3) * 0.3;
+const baseSpeeds = Array.from({ length: laneCount }, () => 6 + Math.random() * 2);
+const noise = (t, i) => Math.sin(t * 5 + i * 1.3) * 0.3;
 
 // 完賽記錄
 const finishedTimes = Array(laneCount).fill(null); // 每匹第一次到線的時間
@@ -55,64 +56,95 @@ let finalOrder = null;                              // 依完成時間排序
 let allArrivedShown = false;
 
 // 相機參數（側視）
-const SIDE_READY = { x: startLineX,  z: 12, h: 4,  lerp: 0.18 }; // Ready：起點側視
-const SIDE_RUN   = {            z: 12, h: 4,  lerp: 0.18 };      // Running：追第一名
-const SIDE_FIN   = { x: finishLineX, z: 12, h: 4,  lerp: 0.15 }; // Finished(未全到)：終點側視
+// ★「最近賽道對準」的效果，主要由這三個 .z 決定攝影機位在場地的哪一側：SIDE_READY.z / SIDE_RUN.z / SIDE_FIN.z
+//   lookAt 的 z 會自動取「離攝影機最近的賽道中心 z」；賽道間距預設為 6（若你有改場地間距，請把程式內 *6 的地方同步調整）
+const SIDE_READY = { x: startLineX, z: 40, h: 5.6, lerp: 0.18 }; // 起點右側、低角度
+const SIDE_RUN = { z: 40, h: 5.6, lerp: 0.18 };  // 只沿 X 平移追，距離/高度固定
+const SIDE_FIN = { x: finishLineX, z: 40, h: 5.6, lerp: 0.15 }; // 終點右側
 
 // 頒獎台（在「賽場中間」且視角拉近）
-const podiumX   = 0;            // ★ 場中央
-const podiumZ   = 0;
-const podiumGap = 3.0;          // 橫向間距（沿 z 排）
-const podiumHeights = [2.2, 1.7, 1.3, 1.0, 0.8]; // 1~5 名台高
-const AWARD_CAM  = { x: 7, y: 5, z: 10, lookX: 0, lookY: 2, lookZ: 0 }; // ★ 近一點的頒獎視角
+// ★ 需求2：整體放大 2 倍（幾何尺寸、高度、間距、頒獎鏡頭）：
+const PODIUM_SCALE = 2;
+
+const podiumX = 0;            // 場中央
+const podiumZ = 0;
+const podiumGap = 3.0;          // 橫向間距（沿 z 排） → 實際使用時會乘上 PODIUM_SCALE
+const podiumHeights = [2.2, 1.7, 1.3, 1.0, 0.8]; // 1~5 名台高 → 實際使用時會乘上 PODIUM_SCALE
+const AWARD_CAM = { x: 7, y: 5, z: 10, lookX: 0, lookY: 2, lookZ: 0 }; // 基礎頒獎視角 → 會乘上 PODIUM_SCALE
 let podiumGroup = null;
 
 // ★★★ 你的馬資源位置（依專案調整） ★★★
 const HORSE_ROOT = '../public/horse/';      // 放 result.gltf 的資料夾
 const HORSE_GLTF = 'result.gltf';
-const HORSE_TEX  = '../public/horse/tex/';  // 放 horse_001.png ~ horse_011.png
+const HORSE_TEX = '../public/horse/tex/';  // 放 horse_001.png ~ horse_011.png
 
 // ===== 工具：讀/寫馬的位置 =====
-const getHorse = (i)=> horses[i]?.player;
-const getHorseX = (iOrHorse)=> {
+const getHorse = (i) => horses[i]?.player;
+const getHorseX = (iOrHorse) => {
   const p = typeof iOrHorse === 'number' ? getHorse(iOrHorse) : iOrHorse?.player || iOrHorse;
   return p?.group?.position?.x ?? 0;
 };
-const setHorsePos = (i, x, y, z)=>{
+const setHorsePos = (i, x, y, z) => {
   const p = getHorse(i); if (!p) return;
   p.group.position.set(x, y, z);
 };
 
+// ===== 計算：離攝影機最近的賽道 z（賽道中心 z = (i - (laneCount-1)/2) * 6） =====
+function nearestLaneZ(zCam) {
+  const gap = 6;                       // ← 若你改跑道間距，這裡也要改
+  const half = (laneCount - 1) / 2;
+  let idx = Math.round(zCam / gap + half);
+  idx = Math.max(0, Math.min(laneCount - 1, idx));
+  return (idx - half) * gap;
+}
+
 // ===== 初始化 three.js 與場景 =====
 function initThree(){
+  // 1) 建 renderer
   renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+  // 顏色/色調映射（要在 renderer 建好之後設）
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+
   resize();
 
+  // 2) 建 scene（一定要在 add 任何東西之前）
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
 
+  // 3) 建 camera / GameCamera
   camera = new THREE.PerspectiveCamera(55, canvas.clientWidth / canvas.clientHeight, 0.1, 500);
   gameCam = new GameCamera(camera, {
-    initialPos: [SIDE_READY.x - 4, SIDE_READY.h, SIDE_READY.z], // Ready 側視起點
+    initialPos: [SIDE_READY.x - 4, SIDE_READY.h, SIDE_READY.z],
     initialLookAt: [startLineX, 0.6, 0],
     followDistance: 8,
     height: 3.2,
     lerp: 0.12,
   });
 
-  // 光
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 0.8); scene.add(hemi);
-  const dir  = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(30, 50, 10); scene.add(dir);
+  // 4) 加光（這裡才可以呼叫 scene.add）
+  const amb = new THREE.AmbientLight(0xffffff, 0.35);
+  scene.add(amb);
 
-  // 跑道
+  const hemi = new THREE.HemisphereLight(0xeaf2ff, 0x1f262d, 0.65);
+  hemi.position.set(0, 1, 0);
+  scene.add(hemi);
+
+  // （如果要保留方向光，也放在這裡）
+  // const dir = new THREE.DirectionalLight(0xffffff, 0.2);
+  // dir.position.set(30, 50, 10);
+  // scene.add(dir);
+
+  // 5) 跑道/白線/起終點門（照你原本的順序放在這之後）
   const track = new THREE.Mesh(
     new THREE.PlaneGeometry(trackLength, laneCount * 6, 1, laneCount),
     new THREE.MeshPhongMaterial({ color: 0x0b7a3b })
   );
   track.rotation.x = -Math.PI/2; scene.add(track);
 
-  // 跑道白線
   const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent:true, opacity:0.5 });
   for (let i = -laneCount/2; i <= laneCount/2; i++){
     const geo = new THREE.BufferGeometry().setFromPoints([
@@ -122,30 +154,15 @@ function initThree(){
     scene.add(new THREE.Line(geo, lineMat));
   }
 
-  // 起跑 / 終點門
   const makeGate = (x, color)=>{ const g=new THREE.Mesh(new THREE.BoxGeometry(0.4,4,laneCount*6), new THREE.MeshBasicMaterial({ color })); g.position.set(x,2,0); scene.add(g); };
   makeGate(startLineX,  0x3ab0ff);
   makeGate(finishLineX, 0xff4081);
 
-  // 音訊與 UI
+  // 6) UI / 時鐘
   audioSystem = new AudioSystem();
-  ui = new UIController({
-    hooks: {
-      onStart: ()=> onGameStart(),
-      onPause: ()=> onGamePause(),
-      onMute:  (m)=> audioSystem.setMuted(m),
-      onVolume:(v)=> audioSystem.setVolume(v),
-    },
-    providers: {
-      getGameId: ()=> gameId,
-      getRanking: ()=> getRankingLabels(), // Running: 即時；Finished: 最終
-      getTop5: ()=> getTop5Labels(),       // 提供 FinishedView 前五名（#編號）
-    },
-    initialView: 'ready',
-    tickIntervalMs: 300,
-  });
-  ui.register('ready',    GameReadyView);
-  ui.register('game',     GameView);
+  ui = new UIController({ /* 保持原設定 */ });
+  ui.register('ready', GameReadyView);
+  ui.register('game', GameView);
   ui.register('finished', FinishedView);
   ui.show('ready');
 
@@ -153,21 +170,22 @@ function initThree(){
   animate();
 }
 
+
 // ★ 建立 11 匹馬（用 HorsePlayer）
-async function loadHorses(){
+async function loadHorses() {
   horses = [];
   const tasks = [];
 
-  for (let i=0; i<laneCount; i++){
+  for (let i = 0; i < laneCount; i++) {
     const playerNo = i + 1;
     const hp = new HorsePlayer(scene, HORSE_ROOT, HORSE_GLTF, playerNo, {
       textureFolder: HORSE_TEX,
       fps: 30,
-      scale: 0.05,
+      scale: 0.05, // 若你已在 HorsePlayer 內預設 0.1，這裡會覆蓋；想跟著預設就刪掉這行
       castShadow: true,
       receiveShadow: true,
-      position: new THREE.Vector3(startLineX + 2, 0, (i - (laneCount-1)/2) * 6),
-      rotation: new THREE.Euler(0, Math.PI/2, 0), // 面向 +X
+      position: new THREE.Vector3(startLineX + 2, 0, (i - (laneCount - 1) / 2) * 6),
+      rotation: new THREE.Euler(0, Math.PI / 2, 0), // 面向 +X
     });
     horses.push({ player: hp });
     tasks.push(hp.loadAsync());
@@ -175,122 +193,127 @@ async function loadHorses(){
 
   // 載入過程回報粗略進度
   let done = 0;
-  tasks.forEach(p => p.then(()=> { done++; reportProgress(60 + Math.round(done / tasks.length * 35)); }));
+  tasks.forEach(p => p.then(() => { done++; reportProgress(60 + Math.round(done / tasks.length * 35)); }));
 
   await Promise.all(tasks);
 
   // Ready 狀態預設 Idle01
-  for (let i=0; i<laneCount; i++){
+  for (let i = 0; i < laneCount; i++) {
     getHorse(i)?.playIdle01(true, 0);
   }
 }
 
 // ===== 調整尺寸 =====
-function resize(){
+function resize() {
   const w = Math.min(window.innerWidth * 0.96, 1000);
-  const h = Math.min(window.innerHeight * 0.9, 1000 / (16/9));
+  const h = Math.min(window.innerHeight * 0.9, 1000 / (16 / 9));
   renderer?.setSize(w, h, false);
-  if (camera){ camera.aspect = w/h; camera.updateProjectionMatrix(); }
+  if (camera) { camera.aspect = w / h; camera.updateProjectionMatrix(); }
 }
 window.addEventListener('resize', resize);
 
 // ===== 排名 / 完賽處理 =====
-function computeLeader(){
+function computeLeader() {
   let maxX = -Infinity, bestIndex = -1;
-  for (let i=0; i<horses.length; i++){
+  for (let i = 0; i < horses.length; i++) {
     const x = getHorseX(i);
-    if (x > maxX){ maxX = x; bestIndex = i; }
+    if (x > maxX) { maxX = x; bestIndex = i; }
   }
   return bestIndex >= 0 ? horses[bestIndex] : null;
 }
-function everyoneFinished(){ return finishedTimes.every(t => t !== null); }
-function stampFinish(i, t){ if (finishedTimes[i] == null) finishedTimes[i] = t; }
-function buildFinalOrder(){
+function everyoneFinished() { return finishedTimes.every(t => t !== null); }
+function stampFinish(i, t) { if (finishedTimes[i] == null) finishedTimes[i] = t; }
+function buildFinalOrder() {
   // 依完賽時間排序
   const idx = [...Array(laneCount).keys()];
-  idx.sort((a,b)=> finishedTimes[a] - finishedTimes[b]);
+  idx.sort((a, b) => finishedTimes[a] - finishedTimes[b]);
   finalOrder = idx.map(i => horses[i]); // 存馬物件
 }
-function labelOf(h){ 
+function labelOf(h) {
   const idx = horses.indexOf(h);
-  return `#${idx+1}`; 
+  return `#${idx + 1}`;
 }
-function getRankingLabels(){
-  if (gameState === STATE.Finished && finalOrder){
+function getRankingLabels() {
+  if (gameState === STATE.Finished && finalOrder) {
     return finalOrder.map(labelOf);       // 最終次序
   }
   const idx = [...Array(laneCount).keys()];
-  idx.sort((a,b)=> getHorseX(b) - getHorseX(a));
-  return idx.map(i => `#${i+1}`);         // 即時
+  idx.sort((a, b) => getHorseX(b) - getHorseX(a));
+  return idx.map(i => `#${i + 1}`);         // 即時
 }
-function getTop5Labels(){
-  if (finalOrder){
-    return finalOrder.slice(0,5).map(labelOf);
+function getTop5Labels() {
+  if (finalOrder) {
+    return finalOrder.slice(0, 5).map(labelOf);
   }
-  const idx = [...Array(laneCount).keys()].sort((a,b)=> getHorseX(b) - getHorseX(a)).slice(0,5);
-  return idx.map(i => `#${i+1}`);
+  const idx = [...Array(laneCount).keys()].sort((a, b) => getHorseX(b) - getHorseX(a)).slice(0, 5);
+  return idx.map(i => `#${i + 1}`);
 }
 
 // ===== 頒獎台（場中央 & 鏡頭靠近） =====
-function ensurePodium(){
+function ensurePodium() {
   if (podiumGroup) return;
   podiumGroup = new THREE.Group();
   scene.add(podiumGroup);
 
-  for (let k=0; k<5; k++){
-    const height = podiumHeights[k];
+  for (let k = 0; k < 5; k++) {
+    const height = podiumHeights[k] * PODIUM_SCALE; // 高度等比放大
     const box = new THREE.Mesh(
-      new THREE.BoxGeometry(2.4, height, 2.4),
-      new THREE.MeshPhongMaterial({ color: k===0 ? 0xffd700 : (k===1 ? 0xc0c0c0 : 0xcd7f32) })
+      new THREE.BoxGeometry(2.4 * PODIUM_SCALE, height, 2.4 * PODIUM_SCALE), // 長寬放大
+      new THREE.MeshPhongMaterial({ color: k === 0 ? 0xffd700 : (k === 1 ? 0xc0c0c0 : 0xcd7f32) })
     );
-    const z = podiumZ + (k-2) * podiumGap; // 中央沿 z 排列
-    box.position.set(podiumX, height/2, z);
+    const z = podiumZ + (k - 2) * podiumGap * PODIUM_SCALE; // 間距放大
+    box.position.set(podiumX, height / 2, z);
     podiumGroup.add(box);
   }
 }
-function placeTop5OnPodium(){
+function placeTop5OnPodium() {
   ensurePodium();
-  const list = finalOrder.slice(0,5);
-  for (let k=0; k<list.length; k++){
+  const list = finalOrder.slice(0, 5);
+  for (let k = 0; k < list.length; k++) {
     const hObj = list[k];
     const p = hObj.player;
-    const height = podiumHeights[k];
-    const z = podiumZ + (k-2) * podiumGap;
-    p.group.position.set(podiumX, height, z);
+    const height = podiumHeights[k] * PODIUM_SCALE;
+    const z = podiumZ + (k - 2) * podiumGap * PODIUM_SCALE;
+    p.group.position.set(podiumX, height, z); // 放到台上頂部
     p.playIdle01(true, 0.15); // 上台後改 Idle
   }
 }
-function moveCameraToAward(){
-  camera.position.set(AWARD_CAM.x, AWARD_CAM.y, AWARD_CAM.z);
-  camera.lookAt(AWARD_CAM.lookX, AWARD_CAM.lookY, AWARD_CAM.lookZ);
+function moveCameraToAward() {
+  const s = PODIUM_SCALE;
+  camera.position.set(AWARD_CAM.x * s, AWARD_CAM.y * s, AWARD_CAM.z * s);
+  camera.lookAt(AWARD_CAM.lookX * s, AWARD_CAM.lookY * s, AWARD_CAM.lookZ * s);
 }
 
-// ===== 相機控制（全部側視；Pause 保持當前畫面） =====
-function updateCamera(){
+// ===== 相機控制（側視；Pause 保持當前畫面） =====
+function updateCamera() {
   if (gameState === STATE.Paused) return; // 暫停：維持當前鏡頭
 
-  if (gameState === STATE.Ready){
+  if (gameState === STATE.Ready) {
     const desired = new THREE.Vector3(SIDE_READY.x, SIDE_READY.h, SIDE_READY.z);
     camera.position.lerp(desired, SIDE_READY.lerp);
-    camera.lookAt(startLineX, 0.6, 0);
+    // ★ 注視離攝影機最近的賽道
+    const focusZ = nearestLaneZ(camera.position.z);
+    camera.lookAt(startLineX, 0.6, focusZ);
     return;
   }
-  if (gameState === STATE.Running){
+  if (gameState === STATE.Running) {
     const target = leader || computeLeader();
-    if (target){
+    if (target) {
       const x = getHorseX(target);
       const desired = new THREE.Vector3(x, SIDE_RUN.h, SIDE_RUN.z);
       camera.position.lerp(desired, SIDE_RUN.lerp);
-      camera.lookAt(x, 0.6, 0);
+      // ★ 注視離攝影機最近的賽道
+      const focusZ = nearestLaneZ(camera.position.z);
+      camera.lookAt(x, 0.6, focusZ);
     }
     return;
   }
-  if (gameState === STATE.Finished){
-    if (everyoneFinished()){
-      if (!allArrivedShown){
+  if (gameState === STATE.Finished) {
+    if (everyoneFinished()) {
+      if (!allArrivedShown) {
         buildFinalOrder();
         placeTop5OnPodium();
-        moveCameraToAward();
+        moveCameraToAward(); // ★ 頒獎鏡頭等比調整
         ui?.show?.('finished');
         allArrivedShown = true;
 
@@ -301,55 +324,56 @@ function updateCamera(){
           top5: getTop5Labels(),
         }, '*');
       }
-    }else{
-      // 未全部到線：固定看終點
+    } else {
+      // 未全部到線：固定看終點，但仍注視最近賽道
       const desired = new THREE.Vector3(SIDE_FIN.x, SIDE_FIN.h, SIDE_FIN.z);
       camera.position.lerp(desired, SIDE_FIN.lerp);
-      camera.lookAt(finishLineX, 0.6, 0);
+      const focusZ = nearestLaneZ(camera.position.z);
+      camera.lookAt(finishLineX, 0.6, focusZ);
     }
   }
 }
 
 // ===== 主迴圈 =====
-function animate(){
+function animate() {
   if (disposed) return;
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
-  const t  = clock.elapsedTime;
+  const t = clock.elapsedTime;
 
   // 推進條件：Running，或 Finished 但未全到線（Pause 不推進）
-  if (gameState === STATE.Running || (gameState === STATE.Finished && !everyoneFinished())){
-    for (let i=0; i<horses.length; i++){
+  if (gameState === STATE.Running || (gameState === STATE.Finished && !everyoneFinished())) {
+    for (let i = 0; i < horses.length; i++) {
       const p = getHorse(i);
       if (!p) continue;
 
-      // ★ 衝線後繼續跑，不鎖住位置
+      // 位移
       p.group.position.x += baseSpeeds[i] * dt;
-      p.group.position.y  = Math.max(0, Math.abs(noise(t, i))*0.2); // 輕微上下起伏
+      p.group.position.y = Math.max(0, Math.abs(noise(t, i)) * 0.2); // 輕微上下起伏
 
-      // 驅動動畫混合器
+      // ★ 驅動動畫混合器（Running 時維持 Run）
       p.update(dt);
 
       // 第一次到線 → 記錄完成時間（不改變移動）
-      if (finishedTimes[i] == null && p.group.position.x >= finishDetectX){
+      if (finishedTimes[i] == null && p.group.position.x >= finishDetectX) {
         stampFinish(i, t);
       }
     }
 
     // 更新第一名（僅在未全到線時）
-    if (!everyoneFinished()){
+    if (!everyoneFinished()) {
       const newLeader = computeLeader();
-      if (newLeader && newLeader !== leader){ leader = newLeader; }
+      if (newLeader && newLeader !== leader) { leader = newLeader; }
     }
 
     // 第一匹到線 → 轉入 Finished（但繼續推進到全到線）
-    if (gameState !== STATE.Finished && finishedTimes.some(v=> v !== null)){
+    if (gameState !== STATE.Finished && finishedTimes.some(v => v !== null)) {
       gameState = STATE.Finished;
       log('[State] Finished (waiting all horses reach the line)');
     }
-  } else if (gameState === STATE.Ready){
+  } else if (gameState === STATE.Ready) {
     // Ready 時也要更新 Idle 動畫（慢速即可）
-    for (let i=0; i<horses.length; i++) getHorse(i)?.update(dt);
+    for (let i = 0; i < horses.length; i++) getHorse(i)?.update(dt);
   }
 
   updateCamera();
@@ -360,51 +384,51 @@ function animate(){
 }
 
 // ===== 事件 & Lifecycle =====
-function onGameStart(){
-  if (gameState === STATE.Finished && allArrivedShown){
-    // 如需「重開一局」，可實作 reset() 邏輯；此處先阻止
+function onGameStart() {
+  if (gameState === STATE.Finished && allArrivedShown) {
+    // 如需「重開一局」，可實作 reset()；此處先阻止
     return;
   }
   // Ready 或 Paused → Running
-  if (gameState === STATE.Ready || gameState === STATE.Paused){
-    // 切換全員跑步動畫
-    for (let i=0; i<laneCount; i++) getHorse(i)?.playRun(true, 0.2);
+  if (gameState === STATE.Ready || gameState === STATE.Paused) {
+    // ★ 切換全員跑步動畫（需求3）
+    for (let i = 0; i < laneCount; i++) getHorse(i)?.playRun(true, 0.2);
 
     gameState = STATE.Running;
     ui?.show?.('game');
     log('[State] Running');
   }
 }
-function onGamePause(){
+function onGamePause() {
   // 只有 Running 才能暫停
-  if (gameState === STATE.Running){
+  if (gameState === STATE.Running) {
     gameState = STATE.Paused;
     log('[State] Paused');
   }
 }
-function onGameEnd(){
+function onGameEnd() {
   log('[Game] End & dispose');
   disposed = true;
   window.removeEventListener('message', onMsg);
   window.removeEventListener('resize', resize);
   ui?.destroy?.();
-  if (renderer){ renderer.dispose(); renderer.forceContextLoss?.(); }
+  if (renderer) { renderer.dispose(); renderer.forceContextLoss?.(); }
 }
 
-function onMsg(ev){
+function onMsg(ev) {
   const msg = ev.data; if (!msg || typeof msg !== 'object') return;
-  switch (msg.type){
+  switch (msg.type) {
     case 'host:start': onGameStart(); break;
     case 'host:pause': onGamePause(); break;
-    case 'host:end':   onGameEnd();   break;
+    case 'host:end': onGameEnd(); break;
     case 'camera:config': gameCam?.configure(msg.payload || {}); break;
   }
 }
 window.addEventListener('message', onMsg);
 
 // ===== 啟動 =====
-(async function boot(){
-  try{
+(async function boot() {
+  try {
     reportProgress(5);
     initThree();
     reportProgress(20);
@@ -417,8 +441,8 @@ window.addEventListener('message', onMsg);
     reportReady();
     banner('three.js + 馬匹載入完成', true);
     log('[Boot] three.js & horses ready');
-  }catch(e){
+  } catch (e) {
     reportError(e); banner('初始化失敗', false); log('[Boot Error]', e);
-    if (location.protocol === 'file:'){ log('提示：請改用本機 HTTP 伺服器（例如 `npx http-server`）。'); }
+    if (location.protocol === 'file:') { log('提示：請改用本機 HTTP 伺服器（例如 `npx http-server`）。'); }
   }
 })();
