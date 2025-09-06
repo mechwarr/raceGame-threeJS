@@ -6,7 +6,8 @@
 //   B) 只有一條長 clip → 依 frame 區間用 subclip 切段
 //
 // 需求：three@0.160.0、GLTFLoader（同版號）
-// 使用：new HorsePlayer(scene, "./", "result.gltf", 7, { textureFolder: "./tex", fps: 30 })
+// 使用（public 路徑）：new HorsePlayer(scene, "/horse/", "result.gltf", 7, { fps: 30 })
+// 若貼圖改放 /horse/tex/ 請改：new HorsePlayer(scene, "/horse/", "result.gltf", 7, { textureFolder: "/horse/tex/", fps: 30 })
 
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
@@ -21,7 +22,6 @@ const HORSE_RANGES = {
 };
 
 // === 已分段 clips 的常見命名 ===
-// 會依序嘗試下列別名，第一個命中的就用
 const CLIP_ALIASES = {
   Walk:     ["Horse_Walk", "Walk", "walk"],
   Run:      ["Horse_Run", "Run", "run", "Gallop"],
@@ -32,6 +32,8 @@ const CLIP_ALIASES = {
 
 // 預設 fps（如你的 glTF 是以 30fps 出，維持 30）
 const DEFAULT_FPS = 30;
+// ★ 預設縮放（依你的要求設為 0.1）
+const DEFAULT_SCALE = 0.1;
 
 // 編號 → 貼圖檔名
 function playerNoToFile(n) {
@@ -42,7 +44,7 @@ function playerNoToFile(n) {
 export class HorsePlayer {
   /**
    * @param {THREE.Scene} scene
-   * @param {string} rootUrl - glTF 所在資料夾，例如 "./"
+   * @param {string} rootUrl - glTF 所在資料夾（public 路徑），預設 "/horse/"
    * @param {string} gltfFilename - 例如 "result.gltf"
    * @param {number} playerNo - 1~11
    * @param {object} [options]
@@ -50,23 +52,27 @@ export class HorsePlayer {
    * @param {number} [options.fps=30] - 以幀定義子動畫時使用的 fps
    * @param {THREE.Vector3} [options.position]
    * @param {THREE.Euler} [options.rotation]
-   * @param {number} [options.scale=1]
+   * @param {number} [options.scale=0.1]
    * @param {boolean} [options.castShadow=false]
    * @param {boolean} [options.receiveShadow=false]
    */
   constructor(scene, rootUrl, gltfFilename, playerNo, options = {}) {
     if (!scene) throw new Error("HorsePlayer 需要 THREE.Scene");
     this.scene = scene;
-    this.rootUrl = rootUrl || "./";
-    this.gltfFilename = gltfFilename || "result.gltf";
-    this.textureFolder = options.textureFolder || this.rootUrl;
+
+    // ★ 公開目錄 public/horse/ → 對外路徑為 /horse/
+    this.rootUrl = rootUrl ?? "/horse/";
+    this.gltfFilename = gltfFilename ?? "result.gltf";
+    // 預設貼圖與 glTF 同資料夾（若你放 /horse/tex/，改成 options.textureFolder 或直接把預設寫成 "/horse/tex/"）
+    this.textureFolder = options.textureFolder ?? this.rootUrl;
+
     this.fps = options.fps ?? DEFAULT_FPS;
 
     this.group = new THREE.Group();
     this.group.name = `HorsePlayer_${playerNo}`;
     this.scene.add(this.group);
 
-    const scale = options.scale ?? 1;
+    const scale = options.scale ?? DEFAULT_SCALE;
     this.group.scale.setScalar(scale);
     if (options.position) this.group.position.copy(options.position);
     if (options.rotation) this.group.rotation.copy(options.rotation);

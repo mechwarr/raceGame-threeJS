@@ -8,6 +8,9 @@ import { GameReadyView } from './systems/ui/views/GameReadyView.js';
 import { GameView }      from './systems/ui/views/GameView.js';
 import { FinishedView }  from './systems/ui/views/FinishedView.js';
 
+// ★ 新增：使用你的 HorsePlayer 類別
+import { HorsePlayer }   from './horse-player-three.js';
+
 // ===== 小工具 =====
 const $log = document.getElementById('log');
 const canvas = document.getElementById('three-canvas');
@@ -31,7 +34,7 @@ let gameState = STATE.Ready;
 
 // ===== 場景物件 / 遊戲資料 =====
 let renderer, scene, camera, clock;
-let horses = [];
+let horses = []; // 內容改為 { player: HorsePlayer }
 const laneCount = 11;                     // ★ 11 匹
 const trackLength = 100;
 const startLineX  = -trackLength/2;
@@ -63,6 +66,22 @@ const podiumGap = 3.0;          // 橫向間距（沿 z 排）
 const podiumHeights = [2.2, 1.7, 1.3, 1.0, 0.8]; // 1~5 名台高
 const AWARD_CAM  = { x: 7, y: 5, z: 10, lookX: 0, lookY: 2, lookZ: 0 }; // ★ 近一點的頒獎視角
 let podiumGroup = null;
+
+// ★★★ 你的馬資源位置（依專案調整） ★★★
+const HORSE_ROOT = '../public/horse/';      // 放 result.gltf 的資料夾
+const HORSE_GLTF = 'result.gltf';
+const HORSE_TEX  = '../public/horse/tex/';  // 放 horse_001.png ~ horse_011.png
+
+// ===== 工具：讀/寫馬的位置 =====
+const getHorse = (i)=> horses[i]?.player;
+const getHorseX = (iOrHorse)=> {
+  const p = typeof iOrHorse === 'number' ? getHorse(iOrHorse) : iOrHorse?.player || iOrHorse;
+  return p?.group?.position?.x ?? 0;
+};
+const setHorsePos = (i, x, y, z)=>{
+  const p = getHorse(i); if (!p) return;
+  p.group.position.set(x, y, z);
+};
 
 // ===== 初始化 three.js 與場景 =====
 function initThree(){
@@ -103,18 +122,6 @@ function initThree(){
     scene.add(new THREE.Line(geo, lineMat));
   }
 
-  // 馬（方塊）
-  const colors = [0xff5555, 0xffaa00, 0x00c8ff, 0xff66cc, 0xdddd33, 0x99ff99, 0x9966ff, 0xffcc66, 0x66ffee, 0xff99aa, 0xcccccc];
-  for (let i=0; i<laneCount; i++){
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(2, 1.2, 1.2),
-      new THREE.MeshStandardMaterial({ color: colors[i % colors.length] })
-    );
-    body.position.set(startLineX + 2, 0.6, (i - (laneCount-1)/2) * 6);
-    scene.add(body);
-    horses.push(body);
-  }
-
   // 起跑 / 終點門
   const makeGate = (x, color)=>{ const g=new THREE.Mesh(new THREE.BoxGeometry(0.4,4,laneCount*6), new THREE.MeshBasicMaterial({ color })); g.position.set(x,2,0); scene.add(g); };
   makeGate(startLineX,  0x3ab0ff);
@@ -146,6 +153,39 @@ function initThree(){
   animate();
 }
 
+// ★ 建立 11 匹馬（用 HorsePlayer）
+async function loadHorses(){
+  horses = [];
+  const tasks = [];
+
+  for (let i=0; i<laneCount; i++){
+    const playerNo = i + 1;
+    const hp = new HorsePlayer(scene, HORSE_ROOT, HORSE_GLTF, playerNo, {
+      textureFolder: HORSE_TEX,
+      fps: 30,
+      scale: 0.05,
+      castShadow: true,
+      receiveShadow: true,
+      position: new THREE.Vector3(startLineX + 2, 0, (i - (laneCount-1)/2) * 6),
+      rotation: new THREE.Euler(0, Math.PI/2, 0), // 面向 +X
+    });
+    horses.push({ player: hp });
+    tasks.push(hp.loadAsync());
+  }
+
+  // 載入過程回報粗略進度
+  let done = 0;
+  tasks.forEach(p => p.then(()=> { done++; reportProgress(60 + Math.round(done / tasks.length * 35)); }));
+
+  await Promise.all(tasks);
+
+  // Ready 狀態預設 Idle01
+  for (let i=0; i<laneCount; i++){
+    getHorse(i)?.playIdle01(true, 0);
+  }
+}
+
+// ===== 調整尺寸 =====
 function resize(){
   const w = Math.min(window.innerWidth * 0.96, 1000);
   const h = Math.min(window.innerHeight * 0.9, 1000 / (16/9));
@@ -156,30 +196,39 @@ window.addEventListener('resize', resize);
 
 // ===== 排名 / 完賽處理 =====
 function computeLeader(){
-  let maxX = -Infinity, best = null;
-  for (const h of horses){ if (h.position.x > maxX){ maxX = h.position.x; best = h; } }
-  return best;
+  let maxX = -Infinity, bestIndex = -1;
+  for (let i=0; i<horses.length; i++){
+    const x = getHorseX(i);
+    if (x > maxX){ maxX = x; bestIndex = i; }
+  }
+  return bestIndex >= 0 ? horses[bestIndex] : null;
 }
 function everyoneFinished(){ return finishedTimes.every(t => t !== null); }
 function stampFinish(i, t){ if (finishedTimes[i] == null) finishedTimes[i] = t; }
 function buildFinalOrder(){
-  finalOrder = [...horses].sort((a,b)=>{
-    const ia = horses.indexOf(a), ib = horses.indexOf(b);
-    return finishedTimes[ia] - finishedTimes[ib];
-  });
+  // 依完賽時間排序
+  const idx = [...Array(laneCount).keys()];
+  idx.sort((a,b)=> finishedTimes[a] - finishedTimes[b]);
+  finalOrder = idx.map(i => horses[i]); // 存馬物件
 }
-function labelOf(h){ return `#${horses.indexOf(h)+1}`; }
+function labelOf(h){ 
+  const idx = horses.indexOf(h);
+  return `#${idx+1}`; 
+}
 function getRankingLabels(){
   if (gameState === STATE.Finished && finalOrder){
     return finalOrder.map(labelOf);       // 最終次序
   }
-  const ordered = [...horses].sort((a,b)=> b.position.x - a.position.x);
-  return ordered.map(labelOf);            // 即時
+  const idx = [...Array(laneCount).keys()];
+  idx.sort((a,b)=> getHorseX(b) - getHorseX(a));
+  return idx.map(i => `#${i+1}`);         // 即時
 }
 function getTop5Labels(){
-  const list = (finalOrder ? finalOrder : [...horses].sort((a,b)=> b.position.x - a.position.x))
-               .slice(0,5).map(labelOf);
-  return list;
+  if (finalOrder){
+    return finalOrder.slice(0,5).map(labelOf);
+  }
+  const idx = [...Array(laneCount).keys()].sort((a,b)=> getHorseX(b) - getHorseX(a)).slice(0,5);
+  return idx.map(i => `#${i+1}`);
 }
 
 // ===== 頒獎台（場中央 & 鏡頭靠近） =====
@@ -203,10 +252,12 @@ function placeTop5OnPodium(){
   ensurePodium();
   const list = finalOrder.slice(0,5);
   for (let k=0; k<list.length; k++){
-    const h = list[k];
+    const hObj = list[k];
+    const p = hObj.player;
     const height = podiumHeights[k];
     const z = podiumZ + (k-2) * podiumGap;
-    h.position.set(podiumX, height + 0.6, z); // 放到台上（馬身半高 0.6）
+    p.group.position.set(podiumX, height, z);
+    p.playIdle01(true, 0.15); // 上台後改 Idle
   }
 }
 function moveCameraToAward(){
@@ -227,9 +278,10 @@ function updateCamera(){
   if (gameState === STATE.Running){
     const target = leader || computeLeader();
     if (target){
-      const desired = new THREE.Vector3(target.position.x, SIDE_RUN.h, SIDE_RUN.z);
+      const x = getHorseX(target);
+      const desired = new THREE.Vector3(x, SIDE_RUN.h, SIDE_RUN.z);
       camera.position.lerp(desired, SIDE_RUN.lerp);
-      camera.lookAt(target.position.x, 0.6, 0);
+      camera.lookAt(x, 0.6, 0);
     }
     return;
   }
@@ -268,13 +320,18 @@ function animate(){
   // 推進條件：Running，或 Finished 但未全到線（Pause 不推進）
   if (gameState === STATE.Running || (gameState === STATE.Finished && !everyoneFinished())){
     for (let i=0; i<horses.length; i++){
-      const h = horses[i];
+      const p = getHorse(i);
+      if (!p) continue;
+
       // ★ 衝線後繼續跑，不鎖住位置
-      h.position.x += baseSpeeds[i] * dt;
-      h.position.y  = 0.6 + Math.abs(noise(t, i))*0.2;
+      p.group.position.x += baseSpeeds[i] * dt;
+      p.group.position.y  = Math.max(0, Math.abs(noise(t, i))*0.2); // 輕微上下起伏
+
+      // 驅動動畫混合器
+      p.update(dt);
 
       // 第一次到線 → 記錄完成時間（不改變移動）
-      if (finishedTimes[i] == null && h.position.x >= finishDetectX){
+      if (finishedTimes[i] == null && p.group.position.x >= finishDetectX){
         stampFinish(i, t);
       }
     }
@@ -290,6 +347,9 @@ function animate(){
       gameState = STATE.Finished;
       log('[State] Finished (waiting all horses reach the line)');
     }
+  } else if (gameState === STATE.Ready){
+    // Ready 時也要更新 Idle 動畫（慢速即可）
+    for (let i=0; i<horses.length; i++) getHorse(i)?.update(dt);
   }
 
   updateCamera();
@@ -307,6 +367,9 @@ function onGameStart(){
   }
   // Ready 或 Paused → Running
   if (gameState === STATE.Ready || gameState === STATE.Paused){
+    // 切換全員跑步動畫
+    for (let i=0; i<laneCount; i++) getHorse(i)?.playRun(true, 0.2);
+
     gameState = STATE.Running;
     ui?.show?.('game');
     log('[State] Running');
@@ -344,11 +407,16 @@ window.addEventListener('message', onMsg);
   try{
     reportProgress(5);
     initThree();
-    reportProgress(60);
+    reportProgress(20);
+
+    // ★ 先把 11 匹馬載入好再回報 ready
+    await loadHorses();
+    reportProgress(95);
+
     reportProgress(100);
     reportReady();
-    banner('three.js CDN 初始化完成', true);
-    log('[Boot] three.js ready');
+    banner('three.js + 馬匹載入完成', true);
+    log('[Boot] three.js & horses ready');
   }catch(e){
     reportError(e); banner('初始化失敗', false); log('[Boot Error]', e);
     if (location.protocol === 'file:'){ log('提示：請改用本機 HTTP 伺服器（例如 `npx http-server`）。'); }
