@@ -5,7 +5,7 @@
 //   A) glTF 內已分段（如 Horse_Walk / Horse_Run / Horse_SpeedRun / Horse_Idle01 / Horse_Idle02）→ 直接用
 //   B) 只有一條長 clip → 依 frame 區間用 subclip 切段
 //
-// 需求：three@0.160.0、GLTFLoader（同版號）
+// 需求：three@0.165.0、GLTFLoader（同版號）
 // 使用（public 路徑）：new HorsePlayer(scene, "/horse/", "result.gltf", 7, { fps: 30 })
 // 若貼圖改放 /horse/tex/ 請改：new HorsePlayer(scene, "/horse/", "result.gltf", 7, { textureFolder: "/horse/tex/", fps: 30 })
 import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
@@ -86,14 +86,16 @@ export class HorsePlayer {
     this._baseClip = null;
     this._actions = {}; // name -> AnimationAction
     this._current = null;
-    this._timeScale = 1;
+
+    // 速度：全域倍率（套在 mixer），單次播放倍率（套在 action.timeScale）
+    this._timeScale = 1; // 全域倍率
 
     this._isLoaded = false;
   }
 
   get isLoaded() { return this._isLoaded; }
 
-  async loadAsync(renderer) {
+  async loadAsync() {
     const loader = new GLTFLoader().setPath(this.rootUrl);
     const gltf = await loader.loadAsync(this.gltfFilename);
 
@@ -135,19 +137,24 @@ export class HorsePlayer {
       }
     }
 
-    // 設定 timeScale
+    // 設定全域 timeScale（Mixer），單次播放倍率預設 1
     this.setSpeed(1);
 
     this._isLoaded = true;
     return this;
   }
 
-  // === 封裝好的播放方法 ===
-  playWalk(loop = true, fade = 0.2) { return this._play("Walk", loop, fade); }
-  playRun(loop = true, fade = 0.2) { return this._play("Run", loop, fade); }
-  playSpeedRun(loop = true, fade = 0.2) { return this._play("SpeedRun", loop, fade); }
-  playIdle01(loop = true, fade = 0.2) { return this._play("Idle01", loop, fade); }
-  playIdle02(loop = true, fade = 0.2) { return this._play("Idle02", loop, fade); }
+  // === 封裝好的播放方法（均新增 speed 參數，預設 1） ===
+  /** @param {boolean} [loop=true] @param {number} [fade=0.2] @param {number} [speed=1] */
+  playWalk(loop = true, fade = 0.2, speed = 1) { return this._play("Walk", loop, fade, speed); }
+  /** @param {boolean} [loop=true] @param {number} [fade=0.2] @param {number} [speed=1] */
+  playRun(loop = true, fade = 0.2, speed = 1) { return this._play("Run", loop, fade, speed); }
+  /** @param {boolean} [loop=true] @param {number} [fade=0.2] @param {number} [speed=1] */
+  playSpeedRun(loop = true, fade = 0.2, speed = 1) { return this._play("SpeedRun", loop, fade, speed); }
+  /** @param {boolean} [loop=true] @param {number} [fade=0.2] @param {number} [speed=1] */
+  playIdle01(loop = true, fade = 0.2, speed = 1) { return this._play("Idle01", loop, fade, speed); }
+  /** @param {boolean} [loop=true] @param {number} [fade=0.2] @param {number} [speed=1] */
+  playIdle02(loop = true, fade = 0.2, speed = 1) { return this._play("Idle02", loop, fade, speed); }
 
   stop() {
     if (this._current) {
@@ -160,10 +167,19 @@ export class HorsePlayer {
     if (this.mixer) this.mixer.update(deltaSeconds);
   }
 
+  /**
+   * 設定「全域播放速度」（會套在整個 mixer 上）
+   * - 單次播放速度請用各 play* 的第三個參數 speed
+   * - 實際速度 = 全域倍率 × 單次倍率
+   */
   setSpeed(timeScale = 1) {
     this._timeScale = Math.max(0.01, Number(timeScale));
     if (this.mixer) this.mixer.timeScale = this._timeScale;
-    if (this._current) this._current.timeScale = this._timeScale;
+    // 保留當前動作的「單次倍率」
+    if (this._current) {
+      const user = this._current.userSpeed ?? 1;
+      this._current.timeScale = user; // action 的 timeScale 當作「單次倍率」
+    }
   }
 
   // 切換玩家號碼 → 換貼圖
@@ -248,14 +264,14 @@ export class HorsePlayer {
   }
 
   _applyMapToMaterial(mat, tex) {
-  if (!mat) return;
-  mat.map = tex;
-  if (mat.map) {
-    mat.map.flipY = false;
-    mat.map.colorSpace = THREE.SRGBColorSpace; // ★ 關鍵
+    if (!mat) return;
+    mat.map = tex;
+    if (mat.map) {
+      mat.map.flipY = false;
+      mat.map.colorSpace = THREE.SRGBColorSpace; // ★ 關鍵
+    }
+    mat.needsUpdate = true;
   }
-  mat.needsUpdate = true;
-}
 
   _join(folder, file) {
     return folder.endsWith("/") ? folder + file : folder + "/" + file;
@@ -303,6 +319,7 @@ export class HorsePlayer {
         action.enabled = true;
         action.clampWhenFinished = true;
         action.loop = THREE.LoopRepeat;
+        action.userSpeed = 1;              // 自訂：紀錄單次倍率
         this._actions[logicalName] = action;
         bound++;
       }
@@ -317,7 +334,8 @@ export class HorsePlayer {
 
     for (const [name, range] of Object.entries(HORSE_RANGES)) {
       const sub = THREE.AnimationUtils.subclip(this._baseClip, name, range.from, range.to, this.fps);
-      const action = this.mixer.clipAction(sub);
+      const action = selfOr(this.mixer.clipAction(sub));
+      function selfOr(a){ a.userSpeed = 1; return a; } // 簡單標記
       action.enabled = true;
       action.clampWhenFinished = true;
       action.loop = THREE.LoopRepeat; // 預設可覆蓋
@@ -325,16 +343,28 @@ export class HorsePlayer {
     }
   }
 
-  _play(name, loop = true, fadeSeconds = 0.2) {
+  /**
+   * @param {string} name - "Walk" | "Run" | "SpeedRun" | "Idle01" | "Idle02"
+   * @param {boolean} [loop=true]
+   * @param {number} [fadeSeconds=0.2]
+   * @param {number} [speed=1] - 單次播放倍率（實際速度 = setSpeed 全域倍率 × 此倍率）
+   */
+  _play(name, loop = true, fadeSeconds = 0.2, speed = 1) {
     const next = this._actions[name];
     if (!next) {
       console.warn(`[HorsePlayer] 播放失敗：沒有名為 ${name} 的動作。`);
       return;
     }
+    const userSpeed = Math.max(0.01, Number(speed) || 1);
+
     next.enabled = true;
     next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
     next.clampWhenFinished = !loop;
-    next.timeScale = this._timeScale;
+
+    // Mixer 負責「全域倍率」，Action 的 timeScale 當「單次倍率」
+    next.userSpeed = userSpeed;
+    next.timeScale = userSpeed;
+
     next.reset();
 
     if (this._current && this._current !== next) {
