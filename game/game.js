@@ -67,11 +67,11 @@ const CAM_CFG = {
     VIEW_HEIGHT: 20,          // 正交可見高度（世界單位）
     FRAMING_BIAS_Y: 0.30,     // 垂直構圖偏移（以可見高度的一半為基準的比例）
     SIDE_READY: { x: startLineX, z: 35, h: 8, lerp: 0.18 },
-    SIDE_RUN: { z: 35, h: 8, lerp: 0.18 },
-    SIDE_FIN: { x: finishLineX, z: 35, h: 8, lerp: 0.15 },
+    SIDE_RUN:   {               z: 35, h: 8, lerp: 0.18 },
+    SIDE_FIN:   { x: finishLineX, z: 35, h: 8, lerp: 0.15 },
     AWARD: {
       ZOOM: 2.0,
-      POS: { x: 7, y: 5, z: 10 },
+      POS:  { x: 7, y: 5, z: 10 },
       LOOK: { x: 0, y: 2, z: 0 },
     },
   },
@@ -83,11 +83,11 @@ const CAM_CFG = {
     FOV_DEG: 55,
     LOOK_AHEAD_MIN: 8,
     SIDE_READY: { x: startLineX, z: 35, h: 8, lerp: 0.18 },
-    SIDE_RUN: { z: 35, h: 8, lerp: 0.18 },
-    SIDE_FIN: { x: finishLineX, z: 35, h: 8, lerp: 0.15 },
+    SIDE_RUN:   {               z: 35, h: 8, lerp: 0.18 },
+    SIDE_FIN:   { x: finishLineX, z: 35, h: 8, lerp: 0.15 },
     AWARD: {
       ZOOM: 2.0,               // 放大倍數（以縮短距離達成）
-      POS: { x: 7, y: 5, z: 10 }, // 透視下主要參考 y / z；x 會依距離計算
+      POS:  { x: 7, y: 5, z: 10 }, // 透視下主要參考 y / z；x 會依距離計算
       LOOK: { x: 0, y: 2, z: 0 },
     },
   },
@@ -106,7 +106,7 @@ let podiumGroup = null;
 // ★★★ 你的馬資源位置（依專案調整）
 const HORSE_ROOT = '../public/horse/';
 const HORSE_GLTF = 'result.gltf';
-const HORSE_TEX = '../public/horse/tex/';
+const HORSE_TEX  = '../public/horse/tex/';
 
 // ===== 工具：讀/寫馬的位置 =====
 const getHorse = (i) => horses[i]?.player;
@@ -144,20 +144,20 @@ function distanceForViewHeight(viewHeight, fovDeg, minAhead = 0) {
 // 構圖偏移：把相機位置與注視點一起做「垂直平移」
 function applyVerticalFraming(pos /*THREE.Vector3*/, look /*THREE.Vector3*/) {
   const offsetY = (cfg().VIEW_HEIGHT * 0.5) * cfg().FRAMING_BIAS_Y;
-  pos.y += offsetY;
+  pos.y  += offsetY;
   look.y += offsetY;
 }
 
 // ★ 依模式建立相機
 function createCamera() {
-  const aspect = canvas.clientWidth / canvas.clientHeight || 16 / 9;
+  const aspect = canvas.clientWidth / canvas.clientHeight || 16/9;
 
   if (CAM_CFG.mode === 'ortho') {
     const vh = cfg().VIEW_HEIGHT;
     camera = new THREE.OrthographicCamera(
-      -vh * aspect * 0.5, vh * aspect * 0.5,
-      vh * 0.5, -vh * 0.5,
-      0.1, 1000
+      -vh * aspect * 0.5,  vh * aspect * 0.5,
+       vh * 0.5,           -vh * 0.5,
+       0.1, 1000
     );
   } else {
     camera = new THREE.PerspectiveCamera(cfg().FOV_DEG, aspect, 0.1, 1000);
@@ -171,7 +171,7 @@ function createCamera() {
       : (initLookX - distanceForViewHeight(cfg().VIEW_HEIGHT, cfg().FOV_DEG, cfg().LOOK_AHEAD_MIN));
 
   gameCam = new GameCamera(camera, {
-    initialPos: [initX, cfg().SIDE_READY.h, cfg().SIDE_READY.z],
+    initialPos:    [initX, cfg().SIDE_READY.h, cfg().SIDE_READY.z],
     initialLookAt: [initLookX, 0.6, 0],
     followDistance: 0,
     height: 0,
@@ -190,21 +190,21 @@ function applyCameraResize() {
 
   if (camera.isOrthographicCamera) {
     const vh = cfg().VIEW_HEIGHT;
-    camera.left = -vh * aspect * 0.5;
-    camera.right = vh * aspect * 0.5;
-    camera.top = vh * 0.5;
+    camera.left   = -vh * aspect * 0.5;
+    camera.right  =  vh * aspect * 0.5;
+    camera.top    =  vh * 0.5;
     camera.bottom = -vh * 0.5;
   } else {
     camera.aspect = aspect;
   }
   camera.updateProjectionMatrix();
 }
-function resize() { applyCameraResize(); }
+function resize(){ applyCameraResize(); }
 window.addEventListener('resize', resize);
 
 // ===== 初始化 three.js 與場景 =====
-function initThree() {
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+function initThree(){
+  renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -218,29 +218,39 @@ function initThree() {
   applyCameraResize();
 
   const amb = new THREE.AmbientLight(0xffffff, 0.85); scene.add(amb);
-  const hemi = new THREE.HemisphereLight(0xeaf2ff, 0x1f262d, 0.65); hemi.position.set(0, 1, 0); scene.add(hemi);
+  const hemi = new THREE.HemisphereLight(0xeaf2ff, 0x1f262d, 0.65); hemi.position.set(0,1,0); scene.add(hemi);
 
   const track = new THREE.Mesh(
     new THREE.PlaneGeometry(trackLength, laneCount * 6, 1, laneCount),
     new THREE.MeshPhongMaterial({ color: 0x0b7a3b })
   );
-  track.rotation.x = -Math.PI / 2; scene.add(track);
+  track.rotation.x = -Math.PI/2; scene.add(track);
 
-  const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
-  for (let i = -laneCount / 2; i <= laneCount / 2; i++) {
+  const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent:true, opacity:0.5 });
+  for (let i = -laneCount/2; i <= laneCount/2; i++){
     const geo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-trackLength / 2, 0.01, i * 6),
-      new THREE.Vector3(trackLength / 2, 0.01, i * 6),
+      new THREE.Vector3(-trackLength/2, 0.01, i*6),
+      new THREE.Vector3( trackLength/2, 0.01, i*6),
     ]);
     scene.add(new THREE.Line(geo, lineMat));
   }
 
-  const makeGate = (x, color) => { const g = new THREE.Mesh(new THREE.BoxGeometry(0.4, 4, laneCount * 6), new THREE.MeshBasicMaterial({ color })); g.position.set(x, 2, 0); scene.add(g); };
-  makeGate(startLineX, 0x3ab0ff);
+  const makeGate = (x, color)=>{ const g=new THREE.Mesh(new THREE.BoxGeometry(0.4,4,laneCount*6), new THREE.MeshBasicMaterial({ color })); g.position.set(x,2,0); scene.add(g); };
+  makeGate(startLineX,  0x3ab0ff);
   makeGate(finishLineX, 0xff4081);
 
   audioSystem = new AudioSystem();
-  ui = new UIController({});
+
+  // ★★★★★ 只與 UI 有關：提供 GameID 與排名給 UI（不改遊戲邏輯）
+  ui = new UIController({
+    providers: {
+      // 你指定的 GameID：1234567890 （若要用實際 gameId，改成：() => gameId）
+      getGameId: () => '1234567890',
+      // 讓 UI 在需要時抓取目前排名
+      getRanking: () => getRankingLabels(),
+    },
+  });
+
   ui.register('ready', GameReadyView);
   ui.register('game', GameView);
   ui.register('finished', FinishedView);
@@ -346,14 +356,14 @@ function updateCamera() {
   const setSideView = (lookX, lookY, lookZ, lerp) => {
     if (CAM_CFG.mode === 'ortho') {
       const desired = new THREE.Vector3(lookX, cfg().SIDE_RUN.h, cfg().SIDE_RUN.z);
-      const look = new THREE.Vector3(lookX, lookY, lookZ);
+      const look    = new THREE.Vector3(lookX, lookY, lookZ);
       applyVerticalFraming(desired, look);        // ★ 套偏移（向上平移，使跑道落在下半部）
       camera.position.lerp(desired, lerp);
       camera.lookAt(look);
     } else {
       const d = distanceForViewHeight(cfg().VIEW_HEIGHT, cfg().FOV_DEG, cfg().LOOK_AHEAD_MIN);
       const desired = new THREE.Vector3(lookX - d, cfg().SIDE_RUN.h, cfg().SIDE_RUN.z);
-      const look = new THREE.Vector3(lookX, lookY, lookZ);
+      const look    = new THREE.Vector3(lookX, lookY, lookZ);
       applyVerticalFraming(desired, look);        // ★ 套偏移
       camera.position.lerp(desired, lerp);
       camera.lookAt(look);
@@ -369,14 +379,14 @@ function updateCamera() {
 
     if (CAM_CFG.mode === 'ortho') {
       const desired = new THREE.Vector3(cfg().SIDE_READY.x, cfg().SIDE_READY.h, cfg().SIDE_READY.z);
-      const look = new THREE.Vector3(lookX, lookY, lookZ);
+      const look    = new THREE.Vector3(lookX, lookY, lookZ);
       applyVerticalFraming(desired, look);
       camera.position.lerp(desired, lerp);
       camera.lookAt(look);
     } else {
       const d = distanceForViewHeight(cfg().VIEW_HEIGHT, cfg().FOV_DEG, cfg().LOOK_AHEAD_MIN);
       const desired = new THREE.Vector3(lookX - d, cfg().SIDE_READY.h, cfg().SIDE_READY.z);
-      const look = new THREE.Vector3(lookX, lookY, lookZ);
+      const look    = new THREE.Vector3(lookX, lookY, lookZ);
       applyVerticalFraming(desired, look);
       camera.position.lerp(desired, lerp);
       camera.lookAt(look);
@@ -419,14 +429,14 @@ function updateCamera() {
       const lookZ = focusZ;
       if (CAM_CFG.mode === 'ortho') {
         const desired = new THREE.Vector3(cfg().SIDE_FIN.x, cfg().SIDE_FIN.h, cfg().SIDE_FIN.z);
-        const look = new THREE.Vector3(lookX, lookY, lookZ);
+        const look    = new THREE.Vector3(lookX, lookY, lookZ);
         applyVerticalFraming(desired, look);
         camera.position.lerp(desired, cfg().SIDE_FIN.lerp);
         camera.lookAt(look);
       } else {
         const d = distanceForViewHeight(cfg().VIEW_HEIGHT, cfg().FOV_DEG, cfg().LOOK_AHEAD_MIN);
         const desired = new THREE.Vector3(lookX - d, cfg().SIDE_FIN.h, cfg().SIDE_FIN.z);
-        const look = new THREE.Vector3(lookX, lookY, lookZ);
+        const look    = new THREE.Vector3(lookX, lookY, lookZ);
         applyVerticalFraming(desired, look);
         camera.position.lerp(desired, cfg().SIDE_FIN.lerp);
         camera.lookAt(look);
@@ -486,6 +496,10 @@ function animate() {
   }
 
   updateCamera();
+
+  // ★★★★★ 只與 UI 有關：推進 UI（讓 GameView.onTick 得以定期更新排名）
+  ui?.tick?.();
+
   renderer.render(scene, camera);
   canvas.classList.toggle('paused', gameState === STATE.Paused);
 }
