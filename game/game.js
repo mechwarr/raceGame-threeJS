@@ -242,14 +242,13 @@ function initThree(){
   audioSystem = new AudioSystem();
 
   // ★★★★★ 只與 UI 有關：提供 GameID 與排名給 UI（不改遊戲邏輯）
-  ui = new UIController({
-    providers: {
-      // 你指定的 GameID：1234567890 （若要用實際 gameId，改成：() => gameId）
-      getGameId: () => '1234567890',
-      // 讓 UI 在需要時抓取目前排名
-      getRanking: () => getRankingLabels(),
-    },
-  });
+ui = new UIController({
+  providers: {
+    getGameId: () => '1234567890',
+    getRanking: () => getRankingLabels(),
+    getTop5:   () => getTop5Labels(),
+  },
+});
 
   ui.register('ready', GameReadyView);
   ui.register('game', GameView);
