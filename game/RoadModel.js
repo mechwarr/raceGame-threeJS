@@ -17,12 +17,23 @@ export class RoadModel {
         (gltf) => {
           this.object = gltf.scene;
           this.object.name = this.name;
+
           this.object.traverse((child) => {
             if (child.isMesh) {
               child.castShadow = true;
               child.receiveShadow = true;
+
+              // ★ 設定雙面材質
+              if (child.material) {
+                if (Array.isArray(child.material)) {
+                  child.material.forEach(m => m.side = THREE.DoubleSide);
+                } else {
+                  child.material.side = THREE.DoubleSide;
+                }
+              }
             }
           });
+
           resolve(this.object);
         },
         undefined,
