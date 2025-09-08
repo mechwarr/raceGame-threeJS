@@ -68,10 +68,10 @@ const CAM_CFG = {
   // === 正交攝影機參數 ===
   ortho: {
     VIEW_HEIGHT: 20,          // 正交可見高度（世界單位）
-    FRAMING_BIAS_Y: 0.30,     // 垂直構圖偏移（以可見高度的一半為基準的比例）
-    SIDE_READY: { x: startLineX, z: 35, h: 8, lerp: 0.18 },
-    SIDE_RUN: { z: 35, h: 8, lerp: 0.18 },
-    SIDE_FIN: { x: finishLineX, z: 35, h: 8, lerp: 0.15 },
+    FRAMING_BIAS_Y: 0.50,     // 垂直構圖偏移（以可見高度的一半為基準的比例）
+    SIDE_READY: { x: startLineX, z: 60, h: 8, lerp: 0.18 },
+    SIDE_RUN: { z: 60, h: 8, lerp: 0.18 },
+    SIDE_FIN: { x: finishLineX, z: 60, h: 8, lerp: 0.15 },
     AWARD: {
       ZOOM: 2.0,
       POS: { x: 7, y: 5, z: 10 },
