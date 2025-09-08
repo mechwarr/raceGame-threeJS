@@ -6,10 +6,11 @@ export async function buildRoadBetween(scene, {
   startX,
   endX,
   laneCount,
-  segments = 1,
+  segments = 5,
   laneGap = 6,
   baseY = 0,
   extraSegments = 2,
+  uniformSize = 240,
 }) {
   const group = new THREE.Group();
   group.name = 'RoadSegments';
@@ -24,8 +25,12 @@ export async function buildRoadBetween(scene, {
   const size = new THREE.Vector3();
   bbox.getSize(size); // size.x = 模型長度, size.z = 模型寬度
 
-  const slotLength = size.x;               // 單段模型長度（因為你 sx=1）
-  const targetWidth = laneCount * laneGap; // 跑道總寬
+  // === 等比縮放 ===
+  const maxDim = Math.max(size.x, size.z);       // 取長寬中最大的邊
+  const scale = uniformSize / maxDim;            // 等比縮放係數
+
+  // 單段模型的實際長度（縮放後）
+  const slotLength = size.x * scale;
 
   // 避免修改樣板，先隱藏樣板
   obj.visible = false;
@@ -33,25 +38,23 @@ export async function buildRoadBetween(scene, {
 
   // 真正鋪設範圍（多加前後 extraSegments）
   const totalSegments = segments + extraSegments * 2;
-  const startOffset = -extraSegments; // 從起點前幾段開始
+  const startOffset = -extraSegments;
 
   for (let i = 0; i < totalSegments; i++) {
     const seg = obj.clone(true);
     seg.name = `RoadSeg_${i + 1}`;
 
-    // 縮放（保持原比例，僅調整 Z 符合跑道寬）
-    const sx = 1.1;
-    const sz = 1.1;
-    seg.scale.set(sx, 1, sz);
+    // 使用等比縮放
+    seg.scale.set(scale, scale, scale);
 
     // 讓底部貼齊 Y=baseY
     const minY = bbox.min.y;
-    seg.position.y = baseY - minY * seg.scale.y;
+    seg.position.y = baseY - minY * scale - 2;
 
-    // 放置位置：以 slotLength 為基準
+    // 放置位置
     const centerX = startX + (startOffset + i + 0.5) * slotLength;
     seg.position.x = centerX;
-    seg.position.z = 1;
+    seg.position.z = -47;
 
     seg.visible = true;
     group.add(seg);
