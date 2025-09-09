@@ -10,7 +10,7 @@ export async function buildRoadBetween(scene, {
   laneGap = 6,
   baseY = 0,
   extraSegments = 2,
-  uniformSize = 240,
+  uniformSize = 2800,
 }) {
   const group = new THREE.Group();
   group.name = 'RoadSegments';
@@ -54,7 +54,7 @@ export async function buildRoadBetween(scene, {
     // 放置位置
     const centerX = startX + (startOffset + i + 0.5) * slotLength;
     seg.position.x = centerX;
-    seg.position.z = -47;
+    seg.position.z = -55;
 
     seg.visible = true;
     group.add(seg);

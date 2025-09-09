@@ -9,12 +9,12 @@ export function buildField(scene, {
     laneGap = 6,
 }) {
 
-    const makeLine = (x) => {
-        const width = 0.3;  
+    const makeLine = (x, color) => {
+        const width = 3;  
         const length = laneCount * laneGap; 
 
         const geometry = new THREE.PlaneGeometry(width, length);
-        const material = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+        const material = new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide });
         const line = new THREE.Mesh(geometry, material);
         const start_offset = 1;
         line.rotation.x = -Math.PI / 2;
@@ -24,9 +24,9 @@ export function buildField(scene, {
         return line;
     };
 
-    const startLine = makeLine(startLineX);
+    const startLine = makeLine(startLineX,0xffffff);
     startLine.position.x += 5;
-    const finishLine = makeLine(finishLineX);
+    const finishLine = makeLine(finishLineX,0xff0000);
 
 
     return { startLine, finishLine };
