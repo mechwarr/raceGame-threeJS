@@ -88,6 +88,15 @@ const HORSE_ROOT = '../public/horse/';
 const HORSE_GLTF = 'result.gltf';
 const HORSE_TEX = '../public/horse/tex/';
 
+// ===== SlowMotion 參數（新增） =====
+const SLOWMO = {
+  enabled: true,       // 是否啟用此機制
+  triggerPct: 0.9,    // 觸發百分比（0~1），預設 95%
+  rate: 0.3,           // 時間縮放（0.3 = 速度減半）
+  active: false,       // 目前是否處於慢動作
+  triggeredAt: null,   // 紀錄觸發時間（可做診斷用）
+};
+
 // ===== 工具：讀/寫馬的位置 =====
 const getHorse = (i) => horses[i]?.player;
 const getHorseX = (iOrHorse) => {
@@ -96,7 +105,16 @@ const getHorseX = (iOrHorse) => {
 };
 const setHorsePos = (i, x, y, z) => { const p = getHorse(i); if (!p) return; p.group.position.set(x, y, z); };
 
-// ===== 計算：離攝影機最近的賽道 z（賽道中心 z = (i - (laneCount-1)/2) * 6） =====
+// 計算領先者「賽程百分比」（0~1 之間，超出會被夾住）
+function getLeaderProgress() {
+  const leadObj = leader || computeLeader();
+  if (!leadObj) return 0;
+  const x = getHorseX(leadObj);
+  const pct = (x - startLineX) / (finishLineX - startLineX);
+  return THREE.MathUtils.clamp(pct, 0, 1.5);
+}
+
+// ===== 計算：離攝影機最近/最遠的賽道 z（保留原函式） =====
 function nearestLaneZ(zCam) {
   const gap = 6;
   const half = (laneCount - 1) / 2;
@@ -104,8 +122,6 @@ function nearestLaneZ(zCam) {
   idx = Math.max(0, Math.min(laneCount - 1, idx));
   return (idx - half) * gap;
 }
-
-// ===== 計算：離攝影機最遠的賽道 z（備用）=====
 function farthestLaneZ(zCam) {
   const gap = 6;
   const half = (laneCount - 1) / 2;
@@ -129,20 +145,11 @@ function applyVerticalFraming(pos /*THREE.Vector3*/, look /*THREE.Vector3*/) {
 }
 
 // === 依固定方向建立「相機位姿」的工具 ===
-// 給定：目標 x（跟拍主角）、相機世界 y（h）、相機世界 z（側距 z）、lerp。
-// 依「固定方向」與視高推回注視點，最後套用垂直構圖偏移。
 function placeWithFixedDir(lookX, eyeH, eyeZ) {
   const d = distanceForViewHeight(CAM.VIEW_HEIGHT, CAM.FOV_DEG, CAM.LOOK_AHEAD_MIN);
-
-  // 相機位置：x 跟著 lookX、y=eyeH、z=eyeZ（保持你配置的世界座標）
   const pos = new THREE.Vector3(lookX, eyeH, eyeZ);
-
-  // 注視點：沿固定方向向前 d（pos + dir * d）
   const look = pos.clone().add(FIXED_DIR.clone().multiplyScalar(d));
-
-  // 構圖偏移：同時移 pos 與 look，不改變方向
   applyVerticalFraming(pos, look);
-
   return { pos, look };
 }
 
@@ -372,14 +379,29 @@ function animate() {
   const dt = clock.getDelta();
   const t = clock.elapsedTime;
 
+  // --- SlowMotion 觸發與關閉（新增） ---
+  if (gameState === STATE.Running && SLOWMO.enabled && !SLOWMO.active) {
+    const pct = getLeaderProgress();
+    if (pct >= SLOWMO.triggerPct) {
+      SLOWMO.active = true;
+      SLOWMO.triggeredAt = t;
+      log(`[SlowMo] triggered at ${Math.round(pct * 100)}% (rate=${SLOWMO.rate})`);
+    }
+  }
+  const dtScale = (SLOWMO.active ? SLOWMO.rate : 1);
+
   if (gameState === STATE.Running || (gameState === STATE.Finished && !everyoneFinished())) {
     for (let i = 0; i < laneCount; i++) {
       const p = getHorse(i);
       if (!p) continue;
-      p.group.position.x += baseSpeeds[i] * dt;
+      // 套用慢動作時間縮放
+      p.group.position.x += baseSpeeds[i] * dt * dtScale;
       p.group.position.y = Math.max(0, Math.abs(noise(t, i)) * 0.2);
-      p.update(dt);
-      if (finishedTimes[i] == null && p.group.position.x >= finishDetectX) stampFinish(i, t);
+      p.update(dt * dtScale);
+
+      if (finishedTimes[i] == null && p.group.position.x >= finishDetectX) {
+        stampFinish(i, t);
+      }
     }
 
     if (!everyoneFinished()) {
@@ -387,8 +409,13 @@ function animate() {
       if (newLeader && newLeader !== leader) leader = newLeader;
     }
 
+    // 第一名抵達 → 進入 Finished 狀態，同時關閉慢動作
     if (gameState !== STATE.Finished && finishedTimes.some(v => v !== null)) {
       gameState = STATE.Finished;
+      if (SLOWMO.active) {
+        SLOWMO.active = false;
+        log('[SlowMo] deactivated (first horse finished)');
+      }
       log('[State] Finished (waiting all horses reach the line)');
     }
   } else if (gameState === STATE.Ready) {
@@ -415,6 +442,10 @@ function onGameStart() {
         h.playRun(true, 0.2, 7);
       }
     }
+    // 開賽時重置慢動作
+    SLOWMO.active = false;
+    SLOWMO.triggeredAt = null;
+
     gameState = STATE.Running;
     ui?.show?.('game');
     log('[State] Running');
