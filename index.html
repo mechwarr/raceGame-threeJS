@@ -6,135 +6,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Iframe 賽馬小遊戲 — 範例</title>
   <style>
-    :root {
-      --accent: #0abab5;
-    }
-
-    body {
-      margin: 0;
-      background: #0b0d12;
-      color: #d9e1e8;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, 'Noto Sans TC', sans-serif;
-    }
-
-    h1 {
-      font-size: 20px;
-      font-weight: 600;
-      text-align: center;
-      margin: 18px 8px;
-      color: #e8f0f7;
-    }
-
-    .control-panel {
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-      align-items: center;
-      flex-wrap: wrap;
-      margin: 0 12px 12px;
-    }
-
-    .control-panel button {
-      padding: 10px 14px;
-      border-radius: 10px;
-      border: 1px solid #2a2f3a;
-      background: #12161d;
-      color: #e7eef6;
-      cursor: pointer;
-    }
-
-    .control-panel button:hover {
-      border-color: #3a4150;
-    }
-
-    .control-panel button:disabled {
-      opacity: .5;
-      cursor: not-allowed;
-    }
-
-    .state-chip {
-      padding: 6px 10px;
-      border-radius: 999px;
-      border: 1px solid #2a2f3a;
-      background: #0e1218;
-      font-size: 12px;
-    }
-
-    #game-root {
-      position: relative;
-      width: min(96vw, 1000px);
-      aspect-ratio: 16/9;
-      margin: 0 auto 24px;
-      border: 1px solid #2a2f3a;
-      border-radius: 16px;
-      overflow: hidden;
-      background: #0e1014;
-    }
-
-    #game-root iframe {
-      width: 100%;
-      height: 100%;
-      border: 0;
-      display: block;
-      background: #000;
-    }
-
-    .loading-overlay {
-      position: absolute;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      gap: 12px;
-      background: rgba(0, 0, 0, .6);
-      backdrop-filter: blur(1px);
-    }
-
-    .loading-overlay.active {
-      display: flex;
-    }
-
-    .spinner {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      border: 4px solid #2a2f3a;
-      border-top-color: var(--accent);
-      animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    .progress {
-      width: min(72%, 520px);
-      height: 10px;
-      border-radius: 999px;
-      background: #1a1f28;
-      overflow: hidden;
-      box-shadow: inset 0 0 0 1px #13161c;
-    }
-
-    .progress .bar {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, var(--accent), #3ab0ff);
-      transition: width .2s ease;
-    }
-
-    .progress-text {
-      font-variant-numeric: tabular-nums;
-      color: #eefbff;
-    }
-
-    .tip {
-      font-size: 12px;
-      opacity: .7;
-    }
+    :root { --accent: #0abab5; }
+    body { margin: 0; background: #0b0d12; color: #d9e1e8; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, 'Noto Sans TC', sans-serif; }
+    h1 { font-size: 20px; font-weight: 600; text-align: center; margin: 18px 8px; color: #e8f0f7; }
+    .control-panel { display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; margin: 0 12px 12px; }
+    .control-panel button { padding: 10px 14px; border-radius: 10px; border: 1px solid #2a2f3a; background: #12161d; color: #e7eef6; cursor: pointer; }
+    .control-panel button:hover { border-color: #3a4150; }
+    .control-panel button:disabled { opacity: .5; cursor: not-allowed; }
+    .state-chip { padding: 6px 10px; border-radius: 999px; border: 1px solid #2a2f3a; background: #0e1218; font-size: 12px; }
+    #game-root { position: relative; width: min(96vw, 1000px); aspect-ratio: 16/9; margin: 0 auto 24px; border: 1px solid #2a2f3a; border-radius: 16px; overflow: hidden; background: #0e1014; }
+    #game-root iframe { width: 100%; height: 100%; border: 0; display: block; background: #000; }
+    .loading-overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 12px; background: rgba(0, 0, 0, .6); backdrop-filter: blur(1px); }
+    .loading-overlay.active { display: flex; }
+    .spinner { width: 36px; height: 36px; border-radius: 50%; border: 4px solid #2a2f3a; border-top-color: var(--accent); animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress { width: min(72%, 520px); height: 10px; border-radius: 999px; background: #1a1f28; overflow: hidden; box-shadow: inset 0 0 0 1px #13161c; }
+    .progress .bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), #3ab0ff); transition: width .2s ease; }
+    .progress-text { font-variant-numeric: tabular-nums; color: #eefbff; }
+    .tip { font-size: 12px; opacity: .7; }
   </style>
 </head>
 
@@ -177,6 +66,19 @@
     const btnPause = document.getElementById('btn-pause');
     const btnEnd = document.getElementById('btn-end');
 
+    // 產生 12 位數字的 gameId（允許前導 0）
+    function genGameId12() {
+      if (window.crypto?.getRandomValues) {
+        const arr = new Uint8Array(12);
+        window.crypto.getRandomValues(arr);
+        return Array.from(arr).map(b => (b % 10).toString()).join('');
+      }
+      // fallback
+      let s = '';
+      for (let i = 0; i < 12; i++) s += Math.floor(Math.random() * 10);
+      return s;
+    }
+
     function refreshUI() {
       const game = RaceGame.GetGame();
       const s = game?.state ?? 'idle';
@@ -202,7 +104,18 @@
       refreshUI();
     });
 
-    btnStart.addEventListener('click', () => { RaceGame.GetGame()?.StartGame(); refreshUI(); });
+    btnStart.addEventListener('click', () => {
+      const game = RaceGame.GetGame();
+      if (!game) return;
+
+      const gameId = genGameId12();   // 1) 12 位數字
+      const rank = [1, 2, 3, 4, 5];   // 2) 固定前五名次
+      const countdown = 3;            // 3) 倒數 3 秒
+
+      game.StartGame(gameId, rank, countdown);
+      refreshUI();
+    });
+
     btnPause.addEventListener('click', () => { RaceGame.GetGame()?.PauseGame(); refreshUI(); });
     btnEnd.addEventListener('click', () => { RaceGame.GetGame()?.DisposeGame(); refreshUI(); });
 

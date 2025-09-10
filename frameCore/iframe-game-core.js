@@ -14,6 +14,13 @@
   }
 
   /** @typedef {'idle'|'initializing'|'ready'|'running'|'paused'|'destroyed'} GameState */
+
+  /** @typedef {Object} StartOptions
+   *  @property {string=} gameId     // 遊戲識別碼
+   *  @property {number[]=} rank     // 例如 [3,5,1,7,2]（1~11）
+   *  @property {number=} countdown  // 倒數秒數（整數）
+   */
+
   let instanceCounter = 0;
 
   class IframeGame {
@@ -145,12 +152,41 @@
       });
     }
 
-    /** 開始（需 ready 或 paused） */
-    StartGame() {
+    /** 將 StartGame 的參數正規化為 payload 物件 */
+    _normalizeStartArgs(argsLike) {
+      /** @type {StartOptions} */
+      let opt = {};
+      const a0 = argsLike[0];
+
+      if (a0 && typeof a0 === 'object' && !Array.isArray(a0)) {
+        // 物件寫法：StartGame({ gameId, rank, countdown })
+        opt = a0;
+      } else {
+        // 參數寫法：StartGame(gameId, rank, countdown)
+        opt.gameId = (typeof a0 === 'string') ? a0 : undefined;
+        opt.rank = Array.isArray(argsLike[1]) ? argsLike[1] : undefined;
+        opt.countdown = (typeof argsLike[2] === 'number') ? argsLike[2] : undefined;
+      }
+
+      const payload = {};
+      if (typeof opt.gameId === 'string') payload.gameId = opt.gameId;
+      if (Array.isArray(opt.rank)) payload.rank = opt.rank;
+      if (typeof opt.countdown === 'number') payload.countdown = opt.countdown;
+
+      return payload;
+    }
+
+    /** 開始：支援 StartGame(gameId, rank, countdown) 或 StartGame({ gameId, rank, countdown }) */
+    StartGame(gameIdOrOptions, rank, countdown) {
       this._assertNotDestroyed();
       if (!this._iframe) throw new Error('尚未建立遊戲');
       if (!['ready', 'paused'].includes(this._state)) return;
-      U.postToGame(this._iframe.contentWindow, { type: 'host:start' }, this.targetOrigin);
+
+      const payload = this._normalizeStartArgs(arguments);
+      // 傳給子頁（game.js 會讀取 payload.gameId / payload.rank / payload.countdown）
+      U.postToGame(this._iframe.contentWindow, { type: 'host:start', payload }, this.targetOrigin);
+
+      // 維持既有行為：立刻把容器側狀態設為 running（子頁會自行倒數後開跑）
       this._setState('running');
     }
 
