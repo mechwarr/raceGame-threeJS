@@ -1,5 +1,19 @@
+// game.js －－ 精簡版（已外掛 SceneSetup / CameraSetup）
 // 主要遊戲腳本：11 匹馬、Pause 修復、Ready/Running/Finished 相機側視、全員到線後頒獎（場中央、拉近）
 import * as THREE from 'https://unpkg.com/three@0.165.0/build/three.module.js';
+
+// 🔌 新增：場景 / 燈光 / Renderer 由外部模組提供
+import { createRenderer, createScene, setupLights } from './SceneSetup.js';
+
+// 🔌 新增：攝影機參考與工具從外部模組取得（下一步我會提供 CameraSetup.js）
+import {
+  createPerspectiveCamera,
+  placeWithFixedDir,
+  gotoPose,
+  moveCameraToAward as moveAwardShot, // 避免命名衝突
+  applyCameraResize,
+} from './CameraSetup.js';
+
 import { GameCamera } from './systems/GameCamera.js';
 import { AudioSystem } from './systems/AudioSystem.js';
 import { buildField } from './FieldBuilder.js';
@@ -48,7 +62,7 @@ let gameCam, audioSystem, ui;
 let leader = null;
 let disposed = false;
 
-// 速度/動畫
+// 速度/動畫（維持你的原始參數）
 const baseSpeeds = Array.from({ length: laneCount }, () => 100 + Math.random() * 20);
 const noise = (t, i) => Math.sin(t * 5 + i * 1.3) * 0.3;
 
@@ -57,44 +71,29 @@ const finishedTimes = Array(laneCount).fill(null); // 每匹第一次到線的�
 let finalOrder = null;                              // 依完成時間排序
 let allArrivedShown = false;
 
-// ======== 透視攝影機參數（唯一模式） ========
+// ======== 透視攝影機參數（仍保留在本檔，因為要吃 start/finish X） ========
 const CAM = {
-  VIEW_HEIGHT: 20,      // 用來反算距離，維持與正交相近構圖的可見高度
-  FRAMING_BIAS_Y: 0.30, // 垂直構圖偏移（以可見高度的一半為基準的比例）
+  VIEW_HEIGHT: 20,
+  FRAMING_BIAS_Y: 0.30,
   FOV_DEG: 55,
   LOOK_AHEAD_MIN: 8,
-  SIDE_READY: { x: startLineX, z: 90, h: 70, lerp: 0.18 },
-  SIDE_RUN:   { z: 90, h: 70, lerp: 0.18 },
+  SIDE_READY: { x: startLineX,   z: 90, h: 70, lerp: 0.18 },
+  SIDE_RUN:   {                 z: 90, h: 70, lerp: 0.18 },
   SIDE_FIN:   { x: finishLineX, z: 90, h: 70, lerp: 0.15 },
   AWARD: {
-    ZOOM: 2.0,               // 放大倍數（以縮短距離達成）
-    POS: { x: 7, y: 5, z: 10 }, // 透視下主要參考 y / z；x 會依距離計算
+    ZOOM: 2.0,
+    POS:  { x: 7, y: 5, z: 10 },
     LOOK: { x: 0, y: 2, z: 0 },
   },
 };
 
-// ===== 固定相機視角方向：正規化 (0, -0.5, -1) =====
-const FIXED_DIR = new THREE.Vector3(0, -0.5, -1).normalize();
-
-// ===== 頒獎台（在「賽場中間」且視角拉近）=====
-const PODIUM_SCALE = 2;
-const podiumX = 0, podiumZ = 0;
-const podiumGap = 3.0;
-const podiumHeights = [2.2, 1.7, 1.3, 1.0, 0.8];
-let podiumGroup = null;
-
-// ★★★ 你的馬資源位置（依專案調整）
-const HORSE_ROOT = '../public/horse/';
-const HORSE_GLTF = 'result.gltf';
-const HORSE_TEX = '../public/horse/tex/';
-
-// ===== SlowMotion 參數（新增） =====
+// ===== SlowMotion 參數（沿用你先前版本） =====
 const SLOWMO = {
-  enabled: true,       // 是否啟用此機制
-  triggerPct: 0.9,    // 觸發百分比（0~1），預設 95%
-  rate: 0.3,           // 時間縮放（0.3 = 速度減半）
-  active: false,       // 目前是否處於慢動作
-  triggeredAt: null,   // 紀錄觸發時間（可做診斷用）
+  enabled: true,     // 啟用慢動作機制
+  triggerPct: 0.9,   // 觸發百分比（0~1），預設 90%（你之前填 0.9）
+  rate: 0.3,         // 時間縮放（0.3 ≈ 0.5x 的更慢效果）
+  active: false,
+  triggeredAt: null,
 };
 
 // ===== 工具：讀/寫馬的位置 =====
@@ -103,7 +102,6 @@ const getHorseX = (iOrHorse) => {
   const p = typeof iOrHorse === 'number' ? getHorse(iOrHorse) : iOrHorse?.player || iOrHorse;
   return p?.group?.position?.x ?? 0;
 };
-const setHorsePos = (i, x, y, z) => { const p = getHorse(i); if (!p) return; p.group.position.set(x, y, z); };
 
 // 計算領先者「賽程百分比」（0~1 之間，超出會被夾住）
 function getLeaderProgress() {
@@ -114,53 +112,14 @@ function getLeaderProgress() {
   return THREE.MathUtils.clamp(pct, 0, 1.5);
 }
 
-// ===== 計算：離攝影機最近/最遠的賽道 z（保留原函式） =====
-function nearestLaneZ(zCam) {
-  const gap = 6;
-  const half = (laneCount - 1) / 2;
-  let idx = Math.round(zCam / gap + half);
-  idx = Math.max(0, Math.min(laneCount - 1, idx));
-  return (idx - half) * gap;
-}
-function farthestLaneZ(zCam) {
-  const gap = 6;
-  const half = (laneCount - 1) / 2;
-  if (zCam >= 0) return (laneCount - 1 - half) * gap;
-  return (0 - half) * gap;
-}
-
-// ====== 相機建立與尺寸調整（透視） ======
-// d = VIEW_HEIGHT / (2 * tan(FOV/2))，同時有 LOOK_AHEAD_MIN 保底
-function distanceForViewHeight(viewHeight, fovDeg, minAhead = 0) {
-  const fov = THREE.MathUtils.degToRad(fovDeg);
-  const d = viewHeight / (2 * Math.tan(fov * 0.5));
-  return Math.max(d, minAhead || 0);
-}
-
-// 構圖偏移：把相機位置與注視點一起做「垂直平移」
-function applyVerticalFraming(pos /*THREE.Vector3*/, look /*THREE.Vector3*/) {
-  const offsetY = (CAM.VIEW_HEIGHT * 0.5) * CAM.FRAMING_BIAS_Y;
-  pos.y += offsetY;
-  look.y += offsetY;
-}
-
-// === 依固定方向建立「相機位姿」的工具 ===
-function placeWithFixedDir(lookX, eyeH, eyeZ) {
-  const d = distanceForViewHeight(CAM.VIEW_HEIGHT, CAM.FOV_DEG, CAM.LOOK_AHEAD_MIN);
-  const pos = new THREE.Vector3(lookX, eyeH, eyeZ);
-  const look = pos.clone().add(FIXED_DIR.clone().multiplyScalar(d));
-  applyVerticalFraming(pos, look);
-  return { pos, look };
-}
-
-// ★ 建立「透視」相機（固定視角）
+// ====== 相機建立（改用 CameraSetup 模組） ======
 function createCamera() {
-  const aspect = canvas.clientWidth / canvas.clientHeight || 16 / 9;
-  camera = new THREE.PerspectiveCamera(CAM.FOV_DEG, aspect, 0.1, 2000);
+  camera = createPerspectiveCamera(canvas, CAM);
 
-  const initX = CAM.SIDE_READY.x;     // 跟起跑線 x
-  const { pos, look } = placeWithFixedDir(initX, CAM.SIDE_READY.h, CAM.SIDE_READY.z);
+  // 初始側視位姿（沿固定視角工具計算）
+  const { pos, look } = placeWithFixedDir(CAM, CAM.SIDE_READY.x, CAM.SIDE_READY.h, CAM.SIDE_READY.z);
 
+  // 仍然保留 GameCamera：提供外部 message `camera:config` 的接口
   gameCam = new GameCamera(camera, {
     initialPos: [pos.x, pos.y, pos.z],
     initialLookAt: [look.x, look.y, look.z],
@@ -170,36 +129,20 @@ function createCamera() {
   });
 }
 
-// ★ 視窗縮放時同步更新相機參數
-function applyCameraResize() {
-  const w = Math.min(window.innerWidth * 0.96, 1200);
-  const h = Math.min(window.innerHeight * 0.9, 1200 / (16 / 9));
-  renderer?.setSize(w, h, false);
-
-  if (!camera) return;
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-}
-function resize() { applyCameraResize(); }
-window.addEventListener('resize', resize);
-
-// ===== 初始化 three.js 與場景 =====
+// ===== 初始化 three.js 與場景（已抽出 renderer/scene/lights） =====
 function initThree() {
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer = createRenderer(canvas, { antialias: true, alpha: true, pixelRatioCap: 2 });
+  scene = createScene({ background: 0x000000 });
+  setupLights(scene, {
+    ambientIntensity: 3.0,
+    hemiIntensity: 0.65,
+    hemiSky: 0xeaf2ff,
+    hemiGround: 0x1f262d,
+  });
 
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
-
-  // ★ 先建立相機（唯一模式：persp）
+  // ★ 建立相機（唯一模式：persp）
   createCamera();
-  applyCameraResize();
-
-  const amb = new THREE.AmbientLight(0xffffff, 3.0); scene.add(amb);
-  const hemi = new THREE.HemisphereLight(0xeaf2ff, 0x1f262d, 0.65); hemi.position.set(0, 1, 0); scene.add(hemi);
+  applyCameraResize(renderer, camera);
 
   // 場地、起點/終點（抽出到新檔）
   buildField(scene, {
@@ -212,7 +155,7 @@ function initThree() {
 
   audioSystem = new AudioSystem();
 
-  // ★★★★★ 只與 UI 有關：提供 GameID 與排名給 UI（不改遊戲邏輯）
+  // 提供 GameID 與排名給 UI（不改遊戲邏輯）
   ui = new UIController({
     providers: {
       getGameId: () => gameId,
@@ -229,6 +172,10 @@ function initThree() {
   clock = new THREE.Clock();
   animate();
 }
+
+// ★ 視窗縮放
+function resize() { applyCameraResize(renderer, camera); }
+window.addEventListener('resize', resize);
 
 // ★ 建立 11 匹馬（用 HorsePlayer）
 async function loadHorses() {
@@ -257,7 +204,7 @@ async function loadHorses() {
   for (let i = 0; i < laneCount; i++) getHorse(i)?.playIdle01(true, 0);
 }
 
-// ===== 排名 / 完賽處理 =====
+// ===== 排名 / 完賽處理（原邏輯保留） =====
 function computeLeader() {
   let maxX = -Infinity, bestIndex = -1;
   for (let i = 0; i < horses.length; i++) {
@@ -273,19 +220,29 @@ function buildFinalOrder() {
   idx.sort((a, b) => finishedTimes[a] - finishedTimes[b]);
   finalOrder = idx.map(i => horses[i]);
 }
-function labelOf(h) { const idx = horses.indexOf(h); return `#${idx + 1}`; }
+function labelOf(h) { const idx = horses.indexOf(h); return `${idx + 1}`; }
 function getRankingLabels() {
   if (gameState === STATE.Finished && finalOrder) return finalOrder.map(labelOf);
   const idx = [...Array(laneCount).keys()].sort((a, b) => getHorseX(b) - getHorseX(a));
-  return idx.map(i => `#${i + 1}`);
+  return idx.map(i => `${i + 1}`);
 }
 function getTop5Labels() {
   if (finalOrder) return finalOrder.slice(0, 5).map(labelOf);
   const idx = [...Array(laneCount).keys()].sort((a, b) => getHorseX(b) - getHorseX(a)).slice(0, 5);
-  return idx.map(i => `#${i + 1}`);
+  return idx.map(i => `${i + 1}`);
 }
 
-// ===== 頒獎台 =====
+// ===== 頒獎台（沿用原邏輯） =====
+const PODIUM_SCALE = 2;
+const podiumX = 0, podiumZ = 0;
+const podiumGap = 3.0;
+const podiumHeights = [2.2, 1.7, 1.3, 1.0, 0.8];
+let podiumGroup = null;
+
+const HORSE_ROOT = '../public/horse/';
+const HORSE_GLTF = 'result.gltf';
+const HORSE_TEX = '../public/horse/tex/';
+
 function ensurePodium() {
   if (podiumGroup) return;
   podiumGroup = new THREE.Group();
@@ -319,15 +276,8 @@ function placeTop5OnPodium() {
 function updateCamera() {
   if (gameState === STATE.Paused) return;
 
-  // 固定視角 helper：以固定方向算出位姿
-  const gotoPose = (lookX, h, z, lerp) => {
-    const { pos, look } = placeWithFixedDir(lookX, h, z);
-    camera.position.lerp(pos, lerp);
-    camera.lookAt(look);
-  };
-
   if (gameState === STATE.Ready) {
-    gotoPose(startLineX, CAM.SIDE_READY.h, CAM.SIDE_READY.z, CAM.SIDE_READY.lerp);
+    gotoPose(camera, CAM, startLineX, CAM.SIDE_READY.h, CAM.SIDE_READY.z, CAM.SIDE_READY.lerp);
     return;
   }
 
@@ -335,7 +285,7 @@ function updateCamera() {
     const target = leader || computeLeader();
     if (target) {
       const x = getHorseX(target);
-      gotoPose(x, CAM.SIDE_RUN.h, CAM.SIDE_RUN.z, 1);
+      gotoPose(camera, CAM, x, CAM.SIDE_RUN.h, CAM.SIDE_RUN.z, 1);
     }
     return;
   }
@@ -345,7 +295,7 @@ function updateCamera() {
       if (!allArrivedShown) {
         buildFinalOrder();
         placeTop5OnPodium();
-        moveCameraToAward(); // 頒獎鏡頭可另行控制，不受固定視角限制
+        moveAwardShot(camera, CAM); // 頒獎鏡頭（拉近）
         ui?.show?.('finished');
         allArrivedShown = true;
 
@@ -357,29 +307,19 @@ function updateCamera() {
         }, '*');
       }
     } else {
-      gotoPose(finishLineX, CAM.SIDE_FIN.h, CAM.SIDE_FIN.z, CAM.SIDE_FIN.lerp);
+      gotoPose(camera, CAM, finishLineX, CAM.SIDE_FIN.h, CAM.SIDE_FIN.z, CAM.SIDE_FIN.lerp);
     }
   }
 }
 
-// ===== 頒獎鏡頭（透視模式拉近） =====
-function moveCameraToAward() {
-  const s = PODIUM_SCALE;
-  const look = new THREE.Vector3(CAM.AWARD.LOOK.x * s, CAM.AWARD.LOOK.y * s, CAM.AWARD.LOOK.z * s);
-  const baseD = distanceForViewHeight(CAM.VIEW_HEIGHT, CAM.FOV_DEG, CAM.LOOK_AHEAD_MIN);
-  const d = baseD / CAM.AWARD.ZOOM; // 縮短距離即放大
-  camera.position.set(look.x - d, CAM.AWARD.POS.y * s, CAM.AWARD.POS.z * s);
-  camera.lookAt(look);
-}
-
-// ===== 主迴圈 =====
+// ===== 主迴圈（含 SlowMotion） =====
 function animate() {
   if (disposed) return;
   requestAnimationFrame(animate);
-  const dt = clock.getDelta();
+  const dtRaw = clock.getDelta();
   const t = clock.elapsedTime;
 
-  // --- SlowMotion 觸發與關閉（新增） ---
+  // SlowMotion 觸發與關閉
   if (gameState === STATE.Running && SLOWMO.enabled && !SLOWMO.active) {
     const pct = getLeaderProgress();
     if (pct >= SLOWMO.triggerPct) {
@@ -388,16 +328,15 @@ function animate() {
       log(`[SlowMo] triggered at ${Math.round(pct * 100)}% (rate=${SLOWMO.rate})`);
     }
   }
-  const dtScale = (SLOWMO.active ? SLOWMO.rate : 1);
+  const dt = (SLOWMO.active ? SLOWMO.rate : 1) * dtRaw;
 
   if (gameState === STATE.Running || (gameState === STATE.Finished && !everyoneFinished())) {
     for (let i = 0; i < laneCount; i++) {
       const p = getHorse(i);
       if (!p) continue;
-      // 套用慢動作時間縮放
-      p.group.position.x += baseSpeeds[i] * dt * dtScale;
+      p.group.position.x += baseSpeeds[i] * dt;
       p.group.position.y = Math.max(0, Math.abs(noise(t, i)) * 0.2);
-      p.update(dt * dtScale);
+      p.update(dt);
 
       if (finishedTimes[i] == null && p.group.position.x >= finishDetectX) {
         stampFinish(i, t);
@@ -419,14 +358,11 @@ function animate() {
       log('[State] Finished (waiting all horses reach the line)');
     }
   } else if (gameState === STATE.Ready) {
-    for (let i = 0; i < laneCount; i++) getHorse(i)?.update(dt);
+    for (let i = 0; i < laneCount; i++) getHorse(i)?.update(dtRaw);
   }
 
   updateCamera();
-
-  // ★★★★★ 只與 UI 有關：推進 UI（讓 GameView.onTick 得以定期更新排名）
-  ui?.tick?.();
-
+  ui?.tick?.(); // 推進 UI（排名更新）
   renderer.render(scene, camera);
   canvas.classList.toggle('paused', gameState === STATE.Paused);
 }
@@ -442,7 +378,7 @@ function onGameStart() {
         h.playRun(true, 0.2, 7);
       }
     }
-    // 開賽時重置慢動作
+    // 重置 SlowMo
     SLOWMO.active = false;
     SLOWMO.triggeredAt = null;
 
@@ -467,7 +403,7 @@ function onGameEnd() {
   if (renderer) { renderer.dispose(); renderer.forceContextLoss?.(); }
 }
 
-// ★ 訊息處理
+// ★ 訊息處理（保留 camera:config 功能）
 function onMsg(ev) {
   const msg = ev.data; if (!msg || typeof msg !== 'object') return;
   switch (msg.type) {
@@ -492,7 +428,7 @@ window.addEventListener('message', onMsg);
       endX: finishLineX,
       laneCount,
       segments: 3,
-      extraSegments: 2, 
+      extraSegments: 2,
       laneGap: 6,
       baseY: -20,
     });
