@@ -65,8 +65,8 @@ const CAM = {
   FOV_DEG: 55,
   LOOK_AHEAD_MIN: 8,
   SIDE_READY: { x: startLineX, z: 90, h: 70, lerp: 0.18 },
-  SIDE_RUN:   { z: 90, h: 70, lerp: 0.18 },
-  SIDE_FIN:   { x: finishLineX, z: 90, h: 70, lerp: 0.15 },
+  SIDE_RUN: { z: 90, h: 70, lerp: 0.18 },
+  SIDE_FIN: { x: finishLineX, z: 90, h: 70, lerp: 0.15 },
   AWARD: {
     ZOOM: 2.0,               // 放大倍數（以縮短距離達成）
     POS: { x: 7, y: 5, z: 10 }, // 透視下主要參考 y / z；x 會依距離計算
@@ -521,18 +521,25 @@ function onGameStart(gameid, rank, countdown) {
     log(`[Start] use external gameId=${currentGameId}`);
   }
   if (Array.isArray(rank) && rank.length) {
-    forcedTop5Rank = rank.slice(0, 5).map(x => Math.max(1, Math.min(11, x|0)));
+    forcedTop5Rank = rank.slice(0, 5).map(x => Math.max(1, Math.min(11, x | 0)));
     log('[Start] received rank(top5)=', forcedTop5Rank.join(','));
   }
 
   // 倒數 → 正式開跑
+  ui?.show?.('ready'); // 先掛上 Ready 畫面（裡面會把 API 掛到 window.GameReadyViewAPI）
+
+  // 先把「等待開始遊戲…」的面板關閉
+  window.GameReadyViewAPI?.hideWaitingPanel?.();
+
   const secs = Math.max(0, Math.floor(countdown || 0));
   if (secs > 0) {
-    ui?.show?.('ready'); // 倒數期間維持 Ready 畫面
-    showCountdown(secs, () => doStartRace());
+    // 交給 GameReadyView 來做倒數，結束後呼叫 doStartRace()
+    window.GameReadyViewAPI?.startCountdown?.(secs, () => doStartRace());
   } else {
     doStartRace();
   }
+
+
 }
 
 function onGamePause() {
@@ -581,7 +588,7 @@ window.addEventListener('message', onMsg);
       endX: finishLineX,
       laneCount,
       segments: 3,
-      extraSegments: 2, 
+      extraSegments: 2,
       laneGap: 6,
       baseY: -20,
     });
