@@ -146,15 +146,17 @@ export class HorsePlayer {
 
   // === 封裝好的播放方法（均新增 speed 參數，預設 1） ===
   /** @param {boolean} [loop=true] @param {number} [fade=0.2] @param {number} [speed=1] */
-  playWalk(loop = true, fade = 0.2, speed = 1) { return this._play("Walk", loop, fade, speed); }
+  playWalk(loop = true, fade = 0.2, speed = 1) { return this._play("Walk", loop, fade, speed, this.randomStartAt()); }
   /** @param {boolean} [loop=true] @param {number} [fade=0.2] @param {number} [speed=1] */
-  playRun(loop = true, fade = 0.2, speed = 1) { return this._play("Run", loop, fade, speed); }
+  playRun(loop = true, fade = 0.2, speed = 1) { return this._play("Run", loop, fade, speed, this.randomStartAt()); }
   /** @param {boolean} [loop=true] @param {number} [fade=0.2] @param {number} [speed=1] */
-  playSpeedRun(loop = true, fade = 0.2, speed = 1) { return this._play("SpeedRun", loop, fade, speed); }
+  playSpeedRun(loop = true, fade = 0.2, speed = 1) { return this._play("SpeedRun", loop, fade, speed, this.randomStartAt()); }
   /** @param {boolean} [loop=true] @param {number} [fade=0.2] @param {number} [speed=1] */
-  playIdle01(loop = true, fade = 0.2, speed = 1) { return this._play("Idle01", loop, fade, speed); }
+  playIdle01(loop = true, fade = 0.2, speed = 1) { return this._play("Idle01", loop, fade, speed, this.randomStartAt()); }
   /** @param {boolean} [loop=true] @param {number} [fade=0.2] @param {number} [speed=1] */
-  playIdle02(loop = true, fade = 0.2, speed = 1) { return this._play("Idle02", loop, fade, speed); }
+  playIdle02(loop = true, fade = 0.2, speed = 1) { return this._play("Idle02", loop, fade, speed, this.randomStartAt()); }
+
+  randomStartAt() { return Math.round(Math.random() * 100) / 100;}
 
   stop() {
     if (this._current) {
@@ -162,6 +164,8 @@ export class HorsePlayer {
       this._current = null;
     }
   }
+
+
 
   update(deltaSeconds) {
     if (this.mixer) this.mixer.update(deltaSeconds);
@@ -342,32 +346,44 @@ export class HorsePlayer {
       this._actions[name] = action;
     }
   }
-
   /**
    * @param {string} name - "Walk" | "Run" | "SpeedRun" | "Idle01" | "Idle02"
-   * @param {boolean} [loop=true]
-   * @param {number} [fadeSeconds=0.2]
-   * @param {number} [speed=1] - 單次播放倍率（實際速度 = setSpeed 全域倍率 × 此倍率）
+   * @param {boolean} [loop=true]         - 是否循環
+   * @param {number}  [fadeSeconds=0.2]   - 交叉淡入秒數
+   * @param {number}  [speed=1]           - 單次播放倍率（實際速度 = 全域倍率 × 此倍率）
+   * @param {number}  [startAt=0]         - 起始進度（0~1），0.5 代表從該動作一半的時間點開始
    */
-  _play(name, loop = true, fadeSeconds = 0.2, speed = 1) {
+  _play(name, loop = true, fadeSeconds = 0.2, speed = 1, startAt = 0) {
     const next = this._actions[name];
     if (!next) {
       console.warn(`[HorsePlayer] 播放失敗：沒有名為 ${name} 的動作。`);
       return;
     }
-    const userSpeed = Math.max(0.01, Number(speed) || 1);
 
+    // 單次倍率
+    const userSpeed = Math.max(0.01, Number(speed) || 1);
     next.enabled = true;
     next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
     next.clampWhenFinished = !loop;
+    next.userSpeed = userSpeed;     // 自訂欄位：記錄單次倍率
+    next.timeScale = userSpeed;     // action 自身倍率
 
-    // Mixer 負責「全域倍率」，Action 的 timeScale 當「單次倍率」
-    next.userSpeed = userSpeed;
-    next.timeScale = userSpeed;
+    // 計算起始時間：以 clip.duration * startAt 決定
+    const clip = next.getClip?.() || next._clip; // 兼容不同 three 版本
+    const dur  = Math.max(0, clip?.duration ?? 0);
+    const p    = Math.min(1, Math.max(0, Number(startAt) || 0)); // clamp 0~1
+    const startTime = dur > 0 ? (p >= 1 ? (loop ? 0 : dur) : (dur * p)) : 0;
 
+    // 重設到指定時間點
     next.reset();
+    if (dur > 0) {
+      // 若是循環，1.0 會回到 0；若非循環，1.0 等同於結束點（立即結束是合理行為）
+      next.time = loop ? (startTime % dur) : Math.min(startTime, dur);
+    }
 
     if (this._current && this._current !== next) {
+      // 先準備好 next 的時間點與啟動，再做 crossFadeTo
+      next.play();
       this._current.crossFadeTo(next, Math.max(0, fadeSeconds), false);
     } else {
       next.play();
@@ -376,4 +392,5 @@ export class HorsePlayer {
     this._current = next;
     return next;
   }
+
 }
