@@ -579,7 +579,9 @@ function onGameStart(gameid, rank, countdown) {
 
     const secs = Math.max(0, Math.floor(countdown || 0));
     if (secs > 0) {
-        // 交給 GameReadyView 來做倒數，結束後呼叫 doStartRace()
+        // ★ 倒數期間：用 Walk 走回起跑點，預留最後 1 秒就位
+        playerStandby(secs);
+        // 交給 GameReadyView 做倒數，倒數結束立刻開跑
         window.GameReadyViewAPI?.startCountdown?.(secs, () => doStartRace());
     } else {
         doStartRace();
