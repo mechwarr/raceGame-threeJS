@@ -9,6 +9,8 @@ export function buildField(scene, {
     laneGap = 6,
 }) {
 
+    const LineOffsetX = 30;
+
     const makeLine = (x, color) => {
         const width = 3;  
         const length = laneCount * laneGap; 
@@ -25,8 +27,9 @@ export function buildField(scene, {
     };
 
     const startLine = makeLine(startLineX,0xffffff);
-    startLine.position.x += 5;
+    startLine.position.x += LineOffsetX;
     const finishLine = makeLine(finishLineX,0xff0000);
+    finishLine.position.x += LineOffsetX;
 
 
     return { startLine, finishLine };

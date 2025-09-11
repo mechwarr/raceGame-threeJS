@@ -271,7 +271,7 @@ async function loadHorses() {
         if (laneZ > maxLaneZ) maxLaneZ = laneZ;
 
         // ★ 固定“起跑點”：之後開跑會重置到這裡
-        const startPos = new THREE.Vector3(startLineX - 30, 0, laneZ);
+        const startPos = new THREE.Vector3(startLineX, 0, laneZ);
 
         // ★ Ready 狀態的隨機散點
         const randX = rand2(startLineX - 80, startLineX + 80);
