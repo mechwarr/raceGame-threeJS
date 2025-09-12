@@ -22,15 +22,7 @@ const reportReady = () => parent?.postMessage({ type: 'game:ready' }, '*');
 const reportError = (e) => parent?.postMessage({ type: 'game:error', error: String(e) }, '*');
 const banner = (msg, ok = true) => { const d = document.createElement('div'); d.className = 'banner ' + (ok ? 'ok' : 'err'); d.textContent = msg; document.documentElement.appendChild(d); setTimeout(() => d.remove(), 3600); };
 
-// 產生 8 碼 GameID（簡易，作為預設）
-const gameIdDefault = (() => {
-    if (crypto?.getRandomValues) {
-        const a = new Uint8Array(4); crypto.getRandomValues(a);
-        return Array.from(a).map(x => x.toString(16).padStart(2, '0')).join('');
-    }
-    return Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
-})();
-let currentGameId = gameIdDefault;
+let currentGameId = '';
 
 // ===== 狀態機 =====
 const STATE = { Ready: 'Ready', Running: 'Running', Paused: 'Paused', Finished: 'Finished' };
@@ -119,7 +111,6 @@ const getHorseX = (iOrHorse) => {
     const p = typeof iOrHorse === 'number' ? getHorse(iOrHorse) : iOrHorse?.player || iOrHorse;
     return p?.group?.position?.x ?? 0;
 };
-const setHorsePos = (i, x, y, z) => { const p = getHorse(i); if (!p) return; p.group.position.set(x, y, z); };
 
 const setHorseRot = (i, faceRight = true) => {
     const p = getHorse(i);
@@ -136,21 +127,6 @@ function getLeaderProgress() {
     const x = getHorseX(leadObj);
     const pct = (x - startLineX) / (finishLineX - startLineX);
     return THREE.MathUtils.clamp(pct, 0, 1.5);
-}
-
-// ===== 計算：離攝影機最近/最遠的賽道 z（保留原函式） =====
-function nearestLaneZ(zCam) {
-    const gap = 6;
-    const half = (laneCount - 1) / 2;
-    let idx = Math.round(zCam / gap + half);
-    idx = Math.max(0, Math.min(laneCount - 1, idx));
-    return (idx - half) * gap;
-}
-function farthestLaneZ(zCam) {
-    const gap = 6;
-    const half = (laneCount - 1) / 2;
-    if (zCam >= 0) return (laneCount - 1 - half) * gap;
-    return (0 - half) * gap;
 }
 
 // ====== 相機建立與尺寸調整（透視） ======
