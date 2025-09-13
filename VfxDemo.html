@@ -7,10 +7,9 @@
     <style>
         body { margin: 0; font-family: sans-serif; }
         canvas { display: block; }
-        #ui-panel {
+        .ui-panel {
             position: fixed;
             top: 10px;
-            right: 10px;
             width: 280px;
             background-color: rgba(0, 0, 0, 0.6);
             backdrop-filter: blur(5px);
@@ -21,6 +20,12 @@
             font-size: 14px;
             user-select: none;
             z-index: 1000;
+        }
+        #ui-panel-left {
+            left: 10px;
+        }
+        #ui-panel-right {
+            right: 10px;
         }
         .ui-section {
             margin-bottom: 15px;
@@ -63,25 +68,73 @@
     </style>
 </head>
 <body>
-    <div id="ui-panel">
-        <h2>效果參數</h2>
+    <div id="ui-panel-left" class="ui-panel">
+        <h2>粒子與顏色參數</h2>
+        <div class="ui-section">
+            <div class="ui-row">
+                <label for="particle-toggle">粒子開關</label>
+                <input type="checkbox" id="particle-toggle" !checked>
+            </div>
+            <div class="ui-row">
+                <label for="particle-direction">粒子方向</label>
+                <select id="particle-direction">
+                    <option value="forward" selected>前方噴射</option>
+                    <option value="backward">後方噴射</option>
+                    <option value="left">左側噴射</option>
+                    <option value="right">右側噴射</option>
+                </select>
+            </div>
+            <div class="ui-row">
+                <label for="particle-count">粒子總數</label>
+                <input type="range" id="particle-count" min="10" max="5000" value="100">
+                <input type="number" id="particle-count-value" min="10" max="5000" value="100">
+            </div>
+            <div class="ui-row">
+                <label for="particle-speed">粒子速度</label>
+                <input type="range" id="particle-speed" min="0" max="100" step="1" value="1">
+                <input type="number" id="particle-speed-value" min="0" max="100" step="1" value="1">
+            </div>
+            <div class="ui-row">
+                <label for="particle-size">粒子大小</label>
+                <input type="range" id="particle-size" min="0" max="10" step="1" value="1">
+                <input type="number" id="particle-size-value" min="0" max="10" step="1" value="1">
+            </div>
+            <div class="ui-row">
+                <label for="particle-opacity">粒子不透明度</label>
+                <input type="range" id="particle-opacity" min="0.0" max="1.0" step="0.01" value="0.8">
+                <input type="number" id="particle-opacity-value" min="0.0" max="1.0" step="0.01" value="0.8">
+            </div>
+            <div class="ui-row">
+                <label for="particle-spread-radius">粒子擴散半徑</label>
+                <input type="range" id="particle-spread-radius" min="0.0" max="10.0" step="0.1" value="0.2">
+                <input type="number" id="particle-spread-radius-value" min="0.0" max="10.0" step="0.1" value="0.2">
+            </div>
+            <div class="ui-row">
+                <label for="particle-lifetime">粒子生命週期</label>
+                <input type="range" id="particle-lifetime" min="0.9" max="1.0" step="0.005" value="0.99">
+                <input type="number" id="particle-lifetime-value" min="0.9" max="1.0" step="0.005" value="0.99">
+            </div>
+        </div>
+    </div>
 
+    <div id="ui-panel-right" class="ui-panel">
+        <h2>其他參數</h2>
         <div class="ui-section">
             <h3>輝光效果 (Bloom)</h3>
             <div class="ui-row">
                 <label for="bloom-strength">強度</label>
-                <input type="range" id="bloom-strength" min="0" max="3" step="0.1" value="1.5">
-                <input type="number" id="bloom-strength-value" min="0" max="3" step="0.1" value="1.5">
+                <input type="range" id="bloom-strength" min="0" max="3" step="0.1" value="0.5">
+                <input type="number" id="bloom-strength-value" min="0" max="3" step="0.1" value="0.5">
             </div>
             <div class="ui-row">
                 <label for="bloom-radius">半徑</label>
-                <input type="range" id="bloom-radius" min="0" max="1" step="0.05" value="0.4">
-                <input type="number" id="bloom-radius-value" min="0" max="1" step="0.05" value="0.4">
+                <input type="range" id="bloom-radius" min="0" max="1" step="0.05" value="0.00">
+                <input type="number" id="bloom-radius-value" min="0" max="1" step="0.05" value="0.00">
             </div>
             <div class="ui-row">
                 <label for="bloom-threshold">閾值</label>
-                <input type="range" id="bloom-threshold" min="0" max="1" step="0.01" value="0.85">
-                <input type="number" id="bloom-threshold-value" min="0" max="1" step="0.01" value="0.85">
+                <input type="range" id="bloom-threshold" min="0" max="1" step="0.01" value="1.00">
+                <input type="number" id="bloom-threshold-value" min="0" max="1" step="0.01" value="1.00">
             </div>
         </div>
 
@@ -99,58 +152,25 @@
             </div>
             <div class="ui-row">
                 <label for="outline-strength">強度</label>
-                <input type="range" id="outline-strength" min="0" max="10" step="0.5" value="5">
-                <input type="number" id="outline-strength-value" min="0" max="10" step="0.5" value="5">
+                <input type="range" id="outline-strength" min="0" max="10" step="0.5" value="7.0">
+                <input type="number" id="outline-strength-value" min="0" max="10" step="0.5" value="7.0">
             </div>
         </div>
-
         <div class="ui-section">
-            <h3>顏色與粒子</h3>
+            <h3>顏色變換</h3>
             <div class="ui-row">
                 <label for="color-toggle">變色開關</label>
                 <input type="checkbox" id="color-toggle" checked>
             </div>
             <div class="ui-row">
                 <label for="color-speed">變色速度</label>
-                <input type="range" id="color-speed" min="0.01" max="0.5" step="0.01" value="0.05">
-                <input type="number" id="color-speed-value" min="0.01" max="0.5" step="0.01" value="0.05">
+                <input type="range" id="color-speed" min="0.00" max="100" step="0.01" value="10">
+                <input type="number" id="color-speed-value" min="0.00" max="100" step="0.01" value="10">
             </div>
             <div class="ui-row">
                 <label for="color-interval">變色間隔 (s)</label>
-                <input type="range" id="color-interval" min="0.5" max="5" step="0.1" value="1.0">
-                <input type="number" id="color-interval-value" min="0.5" max="5" step="0.1" value="1.0">
-            </div>
-            <div class="ui-row">
-                <label for="particle-toggle">粒子開關</label>
-                <input type="checkbox" id="particle-toggle" checked>
-            </div>
-            <div class="ui-row">
-                <label for="particle-direction">粒子方向</label>
-                <select id="particle-direction">
-                    <option value="forward" selected>前方噴射</option>
-                    <option value="backward">後方噴射</option>
-                    <option value="left">左側噴射</option>
-                    <option value="right">右側噴射</option>
-                </select>
-            </div>
-            <div class="ui-row">
-                <label for="particle-count">粒子總數</label>
-                <input type="number" id="particle-count" min="10" max="500" value="125">
-            </div>
-            <div class="ui-row">
-                <label for="particle-speed">粒子速度</label>
-                <input type="range" id="particle-speed" min="0.01" max="1.0" step="0.01" value="0.2">
-                <input type="number" id="particle-speed-value" min="0.01" max="1.0" step="0.01" value="0.2">
-            </div>
-            <div class="ui-row">
-                <label for="particle-size">粒子大小</label>
-                <input type="range" id="particle-size" min="0.05" max="1" step="0.05" value="0.2">
-                <input type="number" id="particle-size-value" min="0.05" max="1" step="0.05" value="0.2">
-            </div>
-            <div class="ui-row">
-                <label for="particle-lifetime">粒子生命週期</label>
-                <input type="range" id="particle-lifetime" min="0.01" max="1" step="0.01" value="0.95">
-                <input type="number" id="particle-lifetime-value" min="0.01" max="1" step="0.01" value="0.95">
+                <input type="range" id="color-interval" min="0.01" max="100" step="0.01" value="1">
+                <input type="number" id="color-interval-value" min="0.01" max="100" step="0.01" value="1">
             </div>
         </div>
     </div>
@@ -520,7 +540,7 @@
           }
         
         }
-
+        
         // 建立場景 (Scene)
         const scene = new THREE.Scene();
 
@@ -543,9 +563,9 @@
 
         const bloomPass = new UnrealBloomPass(
             new THREE.Vector2(window.innerWidth, window.innerHeight),
-            1.5,
-            0.4,
-            0.85
+            0.5,
+            0.00,
+            1.00
         );
         composer.addPass(bloomPass);
 
@@ -556,14 +576,13 @@
         );
         outlinePass.edgeGlow = 1.0;
         outlinePass.edgeThickness = 1.5;
-        outlinePass.edgeStrength = 5;
+        outlinePass.edgeStrength = 7.0;
         outlinePass.visibleEdgeColor.set('#ffffff');
         outlinePass.hiddenEdgeColor.set('#190a05');
         composer.addPass(outlinePass);
-
-
+        
         // 建立燈光
-        const ambientLight = new THREE.AmbientLight(0x404040, 3);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 3);
         scene.add(ambientLight);
 
         // 平行光強度是預設值的 3 倍
@@ -608,22 +627,25 @@
         // 顏色變換相關變數
         const targetOutlineColor = new THREE.Color();
         const currentOutlineColor = new THREE.Color('#ffffff');
-        let colorChangeSpeed = 0.05;
+        let colorChangeSpeed = 1;
         let lastColorChangeTime = 0;
-        let colorChangeInterval = 1.0;
+        let colorChangeInterval = 0.1;
         let isColorChanging = true;
-
+        
         // 粒子系統變數
-        let particleCount = 125;
-        let particleSize = 0.2;
-        let particleSpeed = 0.2;
-        let particleLifetime = 0.95;
+        let particleCount = 100;
+        let particleSize = 1;
+        let particleSpeed = 1;
+        let particleLifetime = 0.999;
+        let particleOpacity = 0.8;
+        let particleSpreadRadius = 0.2;
         let particleIndex = 0;
+        
         const particles = new THREE.BufferGeometry();
         const positions = new Float32Array(particleCount * 3);
         const velocities = new Float32Array(particleCount * 3);
         const particleSizes = new Float32Array(particleCount);
-        let isParticleActive = true;
+        let isParticleActive = false;
         let particleDirection = 'forward';
         const particleDirectionVectors = {
             'forward': new THREE.Vector3(0, 0, -1),
@@ -645,13 +667,19 @@
         particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         particles.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
         particles.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
+
+        const textureLoader = new THREE.TextureLoader();
+        const particleTexture = textureLoader.load('/public/particle/light.png');
         
         const particleMaterial = new THREE.PointsMaterial({ 
             color: new THREE.Color('#ffffff'),
             size: particleSize,
             sizeAttenuation: true,
             transparent: true,
-            opacity: 0.8
+            opacity: particleOpacity,
+            map: particleTexture,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
         });
 
         const particleSystem = new THREE.Points(particles, particleMaterial);
@@ -685,7 +713,7 @@
             }
             
             // 播放動畫
-            horsePlayerInstance.playSpeedRun();
+            horsePlayerInstance.playRun(true, 0.2, 7);
         }
         
         // 初始載入預設模型
@@ -719,17 +747,31 @@
 
             if (sizes[particleIndex] < 0.01) {
                 const i3 = particleIndex * 3;
-                positions[i3] = horsePlayerInstance.group.position.x;
-                positions[i3+1] = horsePlayerInstance.group.position.y + 0.5;
-                positions[i3+2] = horsePlayerInstance.group.position.z;
+                // 從馬匹模型的邊界框內隨機生成發射點
+                const box = new THREE.Box3().setFromObject(horsePlayerInstance.group);
+                const randomPoint = new THREE.Vector3();
+                randomPoint.x = THREE.MathUtils.randFloat(box.min.x, box.max.x);
+                randomPoint.y = THREE.MathUtils.randFloat(box.min.y, box.max.y);
+                randomPoint.z = THREE.MathUtils.randFloat(box.min.z, box.max.z);
 
-                velocities[i3] = directionVector.x * particleSpeed + (Math.random() - 0.5) * 0.1;
-                velocities[i3+1] = directionVector.y * particleSpeed + (Math.random() - 0.5) * 0.1;
-                velocities[i3+2] = directionVector.z * particleSpeed + (Math.random() - 0.5) * 0.1;
+                positions[i3] = randomPoint.x;
+                positions[i3+1] = randomPoint.y;
+                positions[i3+2] = randomPoint.z;
+
+                velocities[i3] = directionVector.x * particleSpeed + (Math.random() - 0.5) * particleSpreadRadius;
+                velocities[i3+1] = directionVector.y * particleSpeed + (Math.random() - 0.5) * particleSpreadRadius;
+                velocities[i3+2] = directionVector.z * particleSpeed + (Math.random() - 0.5) * particleSpreadRadius;
                 
                 sizes[particleIndex] = Math.random() * particleSize + particleSize / 2;
                 
                 particleIndex = (particleIndex + 1) % particleCount;
+            }
+            
+            // 如果粒子開關關閉，將所有粒子大小設為零
+            if (!isParticleActive) {
+                for (let i = 0; i < particleCount; i++) {
+                    sizes[i] = 0;
+                }
             }
 
             particleSystem.geometry.attributes.position.needsUpdate = true;
@@ -760,25 +802,7 @@
                     }
                 }
                 
-                // 調整後的粒子開關邏輯
-                if (isParticleActive) {
-                    if (scene.children.indexOf(particleSystem) === -1) {
-                        // 如果粒子系統不在場景中，則加入
-                        scene.add(particleSystem);
-                        // 並將其位置重設，防止首次顯示時位置不正確
-                        const positions = particleSystem.geometry.attributes.position.array;
-                        for (let i = 0; i < particleCount * 3; i++) {
-                            positions[i] = 0;
-                        }
-                        particleSystem.geometry.attributes.position.needsUpdate = true;
-                    }
-                    updateParticles();
-                } else {
-                    if (scene.children.indexOf(particleSystem) !== -1) {
-                        // 如果粒子系統在場景中，則移除
-                        scene.remove(particleSystem);
-                    }
-                }
+                updateParticles();
             }
 
             controls.update();
@@ -796,17 +820,20 @@
         // --- UI 控制邏輯 ---
         function setupUI() {
             const uiElements = [
-                { id: 'bloom-strength', prop: 'strength', obj: bloomPass },
-                { id: 'bloom-radius', prop: 'radius', obj: bloomPass },
-                { id: 'bloom-threshold', prop: 'threshold', obj: bloomPass },
-                { id: 'outline-glow', prop: 'edgeGlow', obj: outlinePass },
-                { id: 'outline-thickness', prop: 'edgeThickness', obj: outlinePass },
-                { id: 'outline-strength', prop: 'edgeStrength', obj: outlinePass },
-                { id: 'color-speed', prop: 'colorChangeSpeed', global: true },
-                { id: 'color-interval', prop: 'colorChangeInterval', global: true },
-                { id: 'particle-size', prop: 'size', obj: particleMaterial, isMaterial: true },
-                { id: 'particle-speed', prop: 'particleSpeed', global: true },
-                { id: 'particle-lifetime', prop: 'particleLifetime', global: true },
+                { id: 'bloom-strength', prop: 'strength', obj: bloomPass, type: 'float' },
+                { id: 'bloom-radius', prop: 'radius', obj: bloomPass, type: 'float' },
+                { id: 'bloom-threshold', prop: 'threshold', obj: bloomPass, type: 'float' },
+                { id: 'outline-glow', prop: 'edgeGlow', obj: outlinePass, type: 'float' },
+                { id: 'outline-thickness', prop: 'edgeThickness', obj: outlinePass, type: 'float' },
+                { id: 'outline-strength', prop: 'edgeStrength', obj: outlinePass, type: 'float' },
+                { id: 'color-speed', prop: 'colorChangeSpeed', type: 'float' },
+                { id: 'color-interval', prop: 'colorChangeInterval', type: 'float' },
+                { id: 'particle-count', prop: 'particleCount', type: 'int' },
+                { id: 'particle-speed', prop: 'particleSpeed', type: 'float' },
+                { id: 'particle-size', prop: 'particleSize', type: 'float' },
+                { id: 'particle-opacity', prop: 'opacity', obj: particleMaterial, type: 'float' },
+                { id: 'particle-spread-radius', prop: 'particleSpreadRadius', type: 'float' },
+                { id: 'particle-lifetime', prop: 'particleLifetime', type: 'float' },
             ];
         
             uiElements.forEach(item => {
@@ -814,57 +841,51 @@
                 const numberInput = document.getElementById(`${item.id}-value`);
         
                 if (rangeInput && numberInput) {
-                    rangeInput.addEventListener('input', (e) => {
-                        const value = parseFloat(e.target.value);
-                        numberInput.value = value.toFixed(item.isNumber ? 0 : 2);
-                        if (item.global) {
-                            window[item.prop] = value;
-                        } else if (item.isMaterial) {
-                            item.obj[item.prop] = value;
+                    const updateValue = (value) => {
+                        let parsedValue = item.type === 'int' ? parseInt(value) : parseFloat(value);
+                        
+                        if (item.obj) {
+                            item.obj[item.prop] = parsedValue;
                         } else {
-                            item.obj[item.prop] = value;
+                            window[item.prop] = parsedValue;
                         }
+
+                        if (rangeInput.step.includes('.')) {
+                            numberInput.value = parsedValue.toFixed(2);
+                        } else {
+                            numberInput.value = Math.round(parsedValue);
+                        }
+                    };
+
+                    rangeInput.addEventListener('input', (e) => {
+                        updateValue(e.target.value);
                     });
         
                     numberInput.addEventListener('input', (e) => {
-                        let value = parseFloat(e.target.value);
-                        if (isNaN(value)) {
-                            value = 0;
-                        }
-                        if (value < parseFloat(rangeInput.min)) value = parseFloat(rangeInput.min);
-                        if (value > parseFloat(rangeInput.max)) value = parseFloat(rangeInput.max);
+                        let value = item.type === 'int' ? parseInt(e.target.value) : parseFloat(e.target.value);
+                        if (isNaN(value)) value = parseFloat(rangeInput.min);
+                        value = Math.max(parseFloat(rangeInput.min), Math.min(parseFloat(rangeInput.max), value));
                         rangeInput.value = value;
-                        if (item.global) {
-                            window[item.prop] = value;
-                        } else if (item.isMaterial) {
-                            item.obj[item.prop] = value;
-                        } else {
-                            item.obj[item.prop] = value;
-                        }
+                        updateValue(value);
                     });
                 }
             });
             
-            // 粒子總數
-            const particleCountInput = document.getElementById('particle-count');
-            particleCountInput.addEventListener('input', (e) => {
+            // 特殊處理粒子總數，因為沒有對應的 number input
+            const particleCountRange = document.getElementById('particle-count');
+            const particleCountNumber = document.getElementById('particle-count-value');
+            particleCountRange.addEventListener('input', (e) => {
                 const value = parseInt(e.target.value, 10);
-                if (value > 0) {
-                     console.warn('更改粒子總數需重新載入頁面才能生效。');
-                }
+                particleCountNumber.value = value;
                 particleCount = value;
+                console.warn('更改粒子總數需重新載入頁面才能生效。');
             });
-        
-            // 初始化 UI 滑桿值
-            document.getElementById('bloom-strength').value = bloomPass.strength;
-            document.getElementById('bloom-radius').value = bloomPass.radius;
-            document.getElementById('bloom-threshold').value = bloomPass.threshold;
-            document.getElementById('outline-glow').value = outlinePass.edgeGlow;
-            document.getElementById('outline-thickness').value = outlinePass.edgeThickness;
-            document.getElementById('outline-strength').value = outlinePass.edgeStrength;
-            document.getElementById('particle-count').value = particleCount;
-            document.getElementById('particle-speed').value = particleSpeed;
-            document.getElementById('particle-lifetime').value = particleLifetime;
+            particleCountNumber.addEventListener('input', (e) => {
+                const value = parseInt(e.target.value, 10);
+                particleCountRange.value = value;
+                particleCount = value;
+                console.warn('更改粒子總數需重新載入頁面才能生效。');
+            });
             
             // 變色開關邏輯
             const colorToggle = document.getElementById('color-toggle');
@@ -883,6 +904,22 @@
             particleDirectionSelect.addEventListener('change', (e) => {
                 particleDirection = e.target.value;
             });
+
+            // 初始化 UI 滑桿值
+            document.getElementById('bloom-strength').value = bloomPass.strength;
+            document.getElementById('bloom-radius').value = bloomPass.radius;
+            document.getElementById('bloom-threshold').value = bloomPass.threshold;
+            document.getElementById('outline-glow').value = outlinePass.edgeGlow;
+            document.getElementById('outline-thickness').value = outlinePass.edgeThickness;
+            document.getElementById('outline-strength').value = outlinePass.edgeStrength;
+            document.getElementById('color-speed').value = colorChangeSpeed;
+            document.getElementById('color-interval').value = colorChangeInterval;
+            document.getElementById('particle-count').value = particleCount;
+            document.getElementById('particle-speed').value = particleSpeed;
+            document.getElementById('particle-size').value = particleSize;
+            document.getElementById('particle-opacity').value = particleOpacity;
+            document.getElementById('particle-spread-radius').value = particleSpreadRadius;
+            document.getElementById('particle-lifetime').value = particleLifetime;
         }
 
         setupUI();
