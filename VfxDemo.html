@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js 衝刺特效 (本地模型預設, 放大版)</title>
+    <style>
+        body { margin: 0; font-family: sans-serif; }
+        canvas { display: block; }
+        #ui-panel {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            width: 280px;
+            background-color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(5px);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.4);
+            font-size: 14px;
+            user-select: none;
+            z-index: 1000;
+        }
+        .ui-section {
+            margin-bottom: 15px;
+        }
+        .ui-section h3 {
+            margin: 0 0 10px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+            padding-bottom: 5px;
+        }
+        .ui-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .ui-row label {
+            white-space: nowrap;
+            margin-right: 10px;
+        }
+        .ui-row input[type="range"] {
+            flex-grow: 1;
+        }
+        .ui-row input[type="number"] {
+            width: 50px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            padding: 3px;
+            border-radius: 3px;
+            text-align: center;
+        }
+        .ui-row select {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            padding: 3px;
+            border-radius: 3px;
+            flex-grow: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui-panel">
+        <h2>效果參數</h2>
+
+        <div class="ui-section">
+            <h3>輝光效果 (Bloom)</h3>
+            <div class="ui-row">
+                <label for="bloom-strength">強度</label>
+                <input type="range" id="bloom-strength" min="0" max="3" step="0.1" value="1.5">
+                <input type="number" id="bloom-strength-value" min="0" max="3" step="0.1" value="1.5">
+            </div>
+            <div class="ui-row">
+                <label for="bloom-radius">半徑</label>
+                <input type="range" id="bloom-radius" min="0" max="1" step="0.05" value="0.4">
+                <input type="number" id="bloom-radius-value" min="0" max="1" step="0.05" value="0.4">
+            </div>
+            <div class="ui-row">
+                <label for="bloom-threshold">閾值</label>
+                <input type="range" id="bloom-threshold" min="0" max="1" step="0.01" value="0.85">
+                <input type="number" id="bloom-threshold-value" min="0" max="1" step="0.01" value="0.85">
+            </div>
+        </div>
+
+        <div class="ui-section">
+            <h3>外框線 (Outline)</h3>
+            <div class="ui-row">
+                <label for="outline-glow">輝光</label>
+                <input type="range" id="outline-glow" min="0" max="3" step="0.1" value="1.0">
+                <input type="number" id="outline-glow-value" min="0" max="3" step="0.1" value="1.0">
+            </div>
+            <div class="ui-row">
+                <label for="outline-thickness">粗細</label>
+                <input type="range" id="outline-thickness" min="0.5" max="5" step="0.1" value="1.5">
+                <input type="number" id="outline-thickness-value" min="0.5" max="5" step="0.1" value="1.5">
+            </div>
+            <div class="ui-row">
+                <label for="outline-strength">強度</label>
+                <input type="range" id="outline-strength" min="0" max="10" step="0.5" value="5">
+                <input type="number" id="outline-strength-value" min="0" max="10" step="0.5" value="5">
+            </div>
+        </div>
+
+        <div class="ui-section">
+            <h3>顏色與粒子</h3>
+            <div class="ui-row">
+                <label for="color-toggle">變色開關</label>
+                <input type="checkbox" id="color-toggle" checked>
+            </div>
+            <div class="ui-row">
+                <label for="color-speed">變色速度</label>
+                <input type="range" id="color-speed" min="0.01" max="0.5" step="0.01" value="0.05">
+                <input type="number" id="color-speed-value" min="0.01" max="0.5" step="0.01" value="0.05">
+            </div>
+            <div class="ui-row">
+                <label for="color-interval">變色間隔 (s)</label>
+                <input type="range" id="color-interval" min="0.5" max="5" step="0.1" value="1.0">
+                <input type="number" id="color-interval-value" min="0.5" max="5" step="0.1" value="1.0">
+            </div>
+            <div class="ui-row">
+                <label for="particle-toggle">粒子開關</label>
+                <input type="checkbox" id="particle-toggle" checked>
+            </div>
+            <div class="ui-row">
+                <label for="particle-direction">粒子方向</label>
+                <select id="particle-direction">
+                    <option value="forward" selected>前方噴射</option>
+                    <option value="backward">後方噴射</option>
+                    <option value="left">左側噴射</option>
+                    <option value="right">右側噴射</option>
+                </select>
+            </div>
+            <div class="ui-row">
+                <label for="particle-count">粒子總數</label>
+                <input type="number" id="particle-count" min="10" max="500" value="125">
+            </div>
+            <div class="ui-row">
+                <label for="particle-speed">粒子速度</label>
+                <input type="range" id="particle-speed" min="0.01" max="1.0" step="0.01" value="0.2">
+                <input type="number" id="particle-speed-value" min="0.01" max="1.0" step="0.01" value="0.2">
+            </div>
+            <div class="ui-row">
+                <label for="particle-size">粒子大小</label>
+                <input type="range" id="particle-size" min="0.05" max="1" step="0.05" value="0.2">
+                <input type="number" id="particle-size-value" min="0.05" max="1" step="0.05" value="0.2">
+            </div>
+            <div class="ui-row">
+                <label for="particle-lifetime">粒子生命週期</label>
+                <input type="range" id="particle-lifetime" min="0.01" max="1" step="0.01" value="0.95">
+                <input type="number" id="particle-lifetime-value" min="0.01" max="1" step="0.01" value="0.95">
+            </div>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        
+        // 後處理效果相關導入
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
+
+        // === 動畫分段（幀） ===
+        const HORSE_RANGES = {
+          Walk: { from: 0, to: 159 },
+          Run: { from: 241, to: 302 },
+          SpeedRun: { from: 304, to: 362 },
+          Idle01: { from: 365, to: 409 },
+          Idle02: { from: 410, to: 440 },
+        };
+
+        // === 已分段 clips 的常見命名 ===
+        const CLIP_ALIASES = {
+          Walk: ["Horse_Walk", "Walk", "walk"],
+          Run: ["Horse_Run", "Run", "run", "Gallop"],
+          SpeedRun: ["Horse_SpeedRun", "SpeedRun", "speedrun", "Sprint", "SprintRun"],
+          Idle01: ["Horse_Idle01", "Idle01", "idle01", "Idle", "idle"],
+          Idle02: ["Horse_Idle02", "Idle02", "idle02", "Idle_2", "idle_2"],
+        };
+
+        // 預設 fps
+        const DEFAULT_FPS = 30;
+        // ★ 預設縮放
+        const DEFAULT_SCALE = 0.05;
+
+        // 編號 → 貼圖檔名
+        function playerNoToFile(n) {
+          const c = Math.min(11, Math.max(1, (n | 0)));
+          return `horse_${String(c).padStart(3, "0")}.png`;
+        }
+
+        class HorsePlayer {
+          /**
+           * @param {THREE.Scene} scene
+           * @param {string} rootUrl - glTF 所在資料夾（public 路徑），預設 "/horse/"
+           * @param {string} gltfFilename - 例如 "result.gltf"
+           * @param {number} playerNo - 1~11
+           * @param {object} [options]
+           * @param {string} [options.textureFolder] - 貼圖資料夾（預設 rootUrl）
+           * @param {number} [options.fps=30] - 以幀定義子動畫時使用的 fps
+           * @param {THREE.Vector3} [options.position]
+           * @param {THREE.Euler} [options.rotation]
+           * @param {number} [options.scale=0.1]
+           * @param {boolean} [options.castShadow=false]
+           * @param {boolean} [options.receiveShadow=false]
+           */
+          constructor(scene, rootUrl, gltfFilename, playerNo, options = {}) {
+            if (!scene) throw new Error("HorsePlayer 需要 THREE.Scene");
+            this.scene = scene;
+        
+            this.rootUrl = rootUrl ?? "/horse/";
+            this.gltfFilename = gltfFilename ?? "result.gltf";
+            this.textureFolder = options.textureFolder ?? this.rootUrl;
+        
+            this.fps = options.fps ?? DEFAULT_FPS;
+        
+            this.group = new THREE.Group();
+            this.group.name = `HorsePlayer_${playerNo}`;
+            this.scene.add(this.group);
+        
+            const scale = DEFAULT_SCALE;
+            this.group.scale.setScalar(scale);
+            if (options.position) this.group.position.copy(options.position);
+            if (options.rotation) this.group.rotation.copy(options.rotation);
+        
+            this._castShadow = !!options.castShadow;
+            this._receiveShadow = !!options.receiveShadow;
+        
+            this.playerNo = this._clampPlayerNo(playerNo);
+            this.mixer = null;
+            this.model = null;
+            this._baseClip = null;
+            this._actions = {};
+            this._current = null;
+        
+            this._timeScale = 1;
+        
+            this._isLoaded = false;
+          }
+        
+          get isLoaded() { return this._isLoaded; }
+        
+          async loadAsync() {
+            const loader = new GLTFLoader().setPath(this.rootUrl);
+            const gltf = await loader.loadAsync(this.gltfFilename);
+        
+            this.model = gltf.scene || gltf.scenes?.[0];
+            this.group.add(this.model);
+        
+            this.model.traverse(obj => {
+              if (obj.isMesh) {
+                obj.castShadow = this._castShadow;
+                obj.receiveShadow = this._receiveShadow;
+                if (obj.material) {
+                  const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                  for (const m of mats) {
+                    if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
+                    m.needsUpdate = true;
+                  }
+                }
+              }
+            });
+        
+            await this._applyPlayerTexture(this.playerNo);
+        
+            const clips = gltf.animations || [];
+            this.mixer = new THREE.AnimationMixer(this.model);
+        
+            const didBindNamedClips = this._bindActionsFromNamedClips(clips);
+        
+            if (!didBindNamedClips) {
+              this._baseClip = this._pickBaseClip(clips);
+              if (!this._baseClip) {
+                console.warn("[HorsePlayer] 找不到可用的動畫 clip。");
+              } else {
+                this._makeSubclipsFromBase();
+              }
+            }
+        
+            this.setSpeed(1);
+        
+            this._isLoaded = true;
+            return this;
+          }
+        
+          playWalk(loop = true, fade = 0.2, speed = 1) { return this._play("Walk", loop, fade, speed, this.randomStartAt()); }
+          playRun(loop = true, fade = 0.2, speed = 1) { return this._play("Run", loop, fade, speed, this.randomStartAt()); }
+          playSpeedRun(loop = true, fade = 0.2, speed = 1) { return this._play("SpeedRun", loop, fade, speed, this.randomStartAt()); }
+          playIdle01(loop = true, fade = 0.2, speed = 1) { return this._play("Idle01", loop, fade, speed, this.randomStartAt()); }
+          playIdle02(loop = true, fade = 0.2, speed = 1) { return this._play("Idle02", loop, fade, speed, this.randomStartAt()); }
+        
+          randomStartAt() { return Math.round(Math.random() * 100) / 100;}
+        
+          stop() {
+            if (this._current) {
+              this._current.stop();
+              this._current = null;
+            }
+          }
+        
+          update(deltaSeconds) {
+            if (this.mixer) this.mixer.update(deltaSeconds);
+          }
+        
+          setSpeed(timeScale = 1) {
+            this._timeScale = Math.max(0.01, Number(timeScale));
+            if (this.mixer) this.mixer.timeScale = this._timeScale;
+            if (this._current) {
+              const user = this._current.userSpeed ?? 1;
+              this._current.timeScale = user;
+            }
+          }
+        
+          async setPlayerNo(n) {
+            this.playerNo = this._clampPlayerNo(n);
+            await this._applyPlayerTexture(this.playerNo);
+          }
+        
+          dispose() {
+            if (this._current) this._current.stop();
+        
+            if (this.mixer) {
+              for (const action of Object.values(this._actions)) {
+                const clip = action?.getClip?.();
+                if (clip) this.mixer.uncacheAction(clip, this.model);
+              }
+              this.mixer.uncacheRoot(this.model);
+            }
+        
+            this._actions = {};
+            this._current = null;
+            this._baseClip = null;
+        
+            if (this.group) {
+              this.scene.remove(this.group);
+              this.group.traverse(obj => {
+                if (obj.isMesh) {
+                  obj.geometry?.dispose?.();
+                  const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                  for (const m of mats) this._disposeMaterial(m);
+                }
+              });
+              this.group.clear();
+            }
+        
+            this.mixer = null;
+            this.model = null;
+          }
+        
+          _disposeMaterial(mat) {
+            if (!mat) return;
+            for (const key of ["map", "normalMap", "roughnessMap", "metalnessMap", "aoMap", "emissiveMap", "alphaMap"]) {
+              if (mat[key]?.dispose) mat[key].dispose();
+            }
+            mat.dispose?.();
+          }
+        
+          _clampPlayerNo(n) {
+            n = Number(n | 0);
+            if (n < 1) n = 1;
+            if (n > 11) n = 11;
+            return n;
+          }
+        
+          async _applyPlayerTexture(playerNo) {
+            if (!this.model) {
+                console.warn("[HorsePlayer] 模型尚未載入，無法套用貼圖。");
+                return;
+            }
+            const file = playerNoToFile(playerNo);
+            const url = this._join(this.textureFolder, file);
+        
+            console.log(`[HorsePlayer] 載入貼圖：${url}`);
+        
+            const tex = await new Promise((resolve, reject) => {
+              new THREE.TextureLoader().load(
+                url,
+                t => {
+                  t.colorSpace = THREE.SRGBColorSpace;
+                  t.flipY = false;
+                  resolve(t);
+                },
+                undefined,
+                reject
+              );
+            });
+        
+            this.model.traverse(obj => {
+              if (!obj.isMesh) return;
+              const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+              for (const m of mats) this._applyMapToMaterial(m, tex);
+            });
+          }
+        
+          _applyMapToMaterial(mat, tex) {
+            if (!mat) return;
+            mat.map = tex;
+            if (mat.map) {
+              mat.map.flipY = false;
+              mat.map.colorSpace = THREE.SRGBColorSpace;
+            }
+            mat.needsUpdate = true;
+          }
+        
+          _join(folder, file) {
+            return folder.endsWith("/") ? folder + file : folder + "/" + file;
+          }
+        
+          _pickBaseClip(clips) {
+            if (!clips || clips.length === 0) return null;
+            const c1 = clips.find(c => (c.name || "").toLowerCase().includes("horse"));
+            if (c1) return c1;
+            let best = clips[0];
+            let bestDur = best.duration;
+            for (let i = 1; i < clips.length; i++) {
+              if (clips[i].duration > bestDur) {
+                best = clips[i]; bestDur = clips[i].duration;
+              }
+            }
+            return best;
+          }
+        
+          _bindActionsFromNamedClips(clips) {
+            if (!clips || clips.length === 0) return false;
+        
+            let bound = 0;
+            this._actions = {};
+        
+            const byName = new Map();
+            for (const c of clips) byName.set(c.name, c);
+        
+            const tryFind = (candidates) => {
+              for (const n of candidates) {
+                if (byName.has(n)) return byName.get(n);
+              }
+              for (const [k, v] of byName) {
+                if (candidates.some(w => w.toLowerCase() === (k || "").toLowerCase())) return v;
+              }
+              return null;
+            };
+        
+            for (const [logicalName, aliases] of Object.entries(CLIP_ALIASES)) {
+              const clip = tryFind(aliases);
+              if (clip) {
+                const action = this.mixer.clipAction(clip);
+                action.enabled = true;
+                action.clampWhenFinished = true;
+                action.loop = THREE.LoopRepeat;
+                action.userSpeed = 1;
+                this._actions[logicalName] = action;
+                bound++;
+              }
+            }
+        
+            return bound >= 3;
+          }
+        
+          _makeSubclipsFromBase() {
+            if (!this._baseClip) return;
+            this._actions = {};
+        
+            for (const [name, range] of Object.entries(HORSE_RANGES)) {
+              const sub = THREE.AnimationUtils.subclip(this._baseClip, name, range.from, range.to, this.fps);
+              const action = selfOr(this.mixer.clipAction(sub));
+              function selfOr(a){ a.userSpeed = 1; return a; }
+              action.enabled = true;
+              action.clampWhenFinished = true;
+              action.loop = THREE.LoopRepeat;
+              this._actions[name] = action;
+            }
+          }
+          
+          _play(name, loop = true, fadeSeconds = 0.2, speed = 1, startAt = 0) {
+            const next = this._actions[name];
+            if (!next) {
+              console.warn(`[HorsePlayer] 播放失敗：沒有名為 ${name} 的動作。`);
+              return;
+            }
+        
+            const userSpeed = Math.max(0.01, Number(speed) || 1);
+            next.enabled = true;
+            next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+            next.clampWhenFinished = !loop;
+            next.userSpeed = userSpeed;
+            next.timeScale = userSpeed;
+        
+            const clip = next.getClip?.() || next._clip;
+            const dur  = Math.max(0, clip?.duration ?? 0);
+            const p    = Math.min(1, Math.max(0, Number(startAt) || 0));
+            const startTime = dur > 0 ? (p >= 1 ? (loop ? 0 : dur) : (dur * p)) : 0;
+        
+            next.reset();
+            if (dur > 0) {
+              next.time = loop ? (startTime % dur) : Math.min(startTime, dur);
+            }
+        
+            if (this._current && this._current !== next) {
+              next.play();
+              this._current.crossFadeTo(next, Math.max(0, fadeSeconds), false);
+            } else {
+              next.play();
+            }
+        
+            this._current = next;
+            return next;
+          }
+        
+        }
+
+        // 建立場景 (Scene)
+        const scene = new THREE.Scene();
+
+        // 建立相機 (Camera)
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 2, 8);
+
+        // 建立渲染器 (Renderer)
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        document.body.appendChild(renderer.domElement);
+
+        // --- 建立後處理 (Post-processing) 管線 ---
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            1.5,
+            0.4,
+            0.85
+        );
+        composer.addPass(bloomPass);
+
+        const outlinePass = new OutlinePass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            scene,
+            camera
+        );
+        outlinePass.edgeGlow = 1.0;
+        outlinePass.edgeThickness = 1.5;
+        outlinePass.edgeStrength = 5;
+        outlinePass.visibleEdgeColor.set('#ffffff');
+        outlinePass.hiddenEdgeColor.set('#190a05');
+        composer.addPass(outlinePass);
+
+
+        // 建立燈光
+        const ambientLight = new THREE.AmbientLight(0x404040, 3);
+        scene.add(ambientLight);
+
+        // 平行光強度是預設值的 3 倍
+        const dirLight = new THREE.DirectionalLight(0xffffff, 3);
+        dirLight.position.set(5, 5, 5);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 50;
+        scene.add(dirLight);
+
+        // --- 載入自定義的 Skybox ---
+        const cubeTextureLoader = new THREE.CubeTextureLoader();
+        cubeTextureLoader.setPath('public/skybox/');
+        const skyboxTexture = cubeTextureLoader.load([
+            'yonder_rt.jpg',
+            'yonder_lf.jpg',
+            'yonder_up.jpg',
+            'yonder_dn.jpg',
+            'yonder_ft.jpg',
+            'yonder_bk.jpg'
+        ]);
+        scene.background = skyboxTexture;
+        scene.environment = skyboxTexture;
+
+        // 建立軌道控制器 (OrbitControls)
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.target.set(0, 1, 0);
+        controls.update();
+
+        // --- 特效相關變數 ---
+        let horsePlayerInstance = null;
+        const clock = new THREE.Clock();
+        
+        // 恆定的衝刺參數
+        const fovSprint = 90;
+        let targetFOV = fovSprint;
+        
+        // 顏色變換相關變數
+        const targetOutlineColor = new THREE.Color();
+        const currentOutlineColor = new THREE.Color('#ffffff');
+        let colorChangeSpeed = 0.05;
+        let lastColorChangeTime = 0;
+        let colorChangeInterval = 1.0;
+        let isColorChanging = true;
+
+        // 粒子系統變數
+        let particleCount = 125;
+        let particleSize = 0.2;
+        let particleSpeed = 0.2;
+        let particleLifetime = 0.95;
+        let particleIndex = 0;
+        const particles = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+        const particleSizes = new Float32Array(particleCount);
+        let isParticleActive = true;
+        let particleDirection = 'forward';
+        const particleDirectionVectors = {
+            'forward': new THREE.Vector3(0, 0, -1),
+            'backward': new THREE.Vector3(0, 0, 1),
+            'left': new THREE.Vector3(-1, 0, 0),
+            'right': new THREE.Vector3(1, 0, 0),
+        };
+
+        for (let i = 0; i < particleCount * 3; i += 3) {
+            positions[i] = 0;
+            positions[i+1] = 0;
+            positions[i+2] = 0;
+            velocities[i] = 0;
+            velocities[i+1] = 0;
+            velocities[i+2] = 0;
+            particleSizes[i/3] = 0;
+        }
+
+        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particles.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+        particles.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
+        
+        const particleMaterial = new THREE.PointsMaterial({ 
+            color: new THREE.Color('#ffffff'),
+            size: particleSize,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.8
+        });
+
+        const particleSystem = new THREE.Points(particles, particleMaterial);
+        scene.add(particleSystem);
+        
+        // ★★★ 馬資源位置（依專案調整）
+        const HORSE_ROOT = 'public/horse/';
+        const HORSE_GLTF = 'result.gltf';
+
+        // 載入模型
+        async function loadModel() {
+            // 移除舊模型
+            if (horsePlayerInstance) {
+                horsePlayerInstance.dispose();
+                horsePlayerInstance = null;
+            }
+            
+            // 由於 UI 已移除，直接使用預設值
+            const playerNo = 1;
+
+            const gltfPath = HORSE_ROOT;
+            const texturePath = HORSE_ROOT + 'tex/';
+            const scale = DEFAULT_SCALE;
+            horsePlayerInstance = new HorsePlayer(scene, gltfPath, HORSE_GLTF, playerNo, { textureFolder: texturePath, scale: scale });
+
+            await horsePlayerInstance.loadAsync();
+
+            // 確保模型載入後才設定外框線
+            if (horsePlayerInstance.model) {
+                outlinePass.selectedObjects = [horsePlayerInstance.model];
+            }
+            
+            // 播放動畫
+            horsePlayerInstance.playSpeedRun();
+        }
+        
+        // 初始載入預設模型
+        loadModel();
+
+        // 簡單的地板
+        const planeGeometry = new THREE.PlaneGeometry(50, 50);
+        const planeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888 });
+        const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+        plane.rotation.x = -Math.PI / 2;
+        plane.receiveShadow = true;
+        scene.add(plane);
+
+        // 更新粒子系統
+        function updateParticles() {
+            if (!horsePlayerInstance || !horsePlayerInstance.group) return;
+
+            const positions = particleSystem.geometry.attributes.position.array;
+            const velocities = particleSystem.geometry.attributes.velocity.array;
+            const sizes = particleSystem.geometry.attributes.size.array;
+            
+            const directionVector = particleDirectionVectors[particleDirection];
+            
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+                positions[i3] += velocities[i3];
+                positions[i3+1] += velocities[i3+1];
+                positions[i3+2] += velocities[i3+2];
+                sizes[i] *= particleLifetime;
+            }
+
+            if (sizes[particleIndex] < 0.01) {
+                const i3 = particleIndex * 3;
+                positions[i3] = horsePlayerInstance.group.position.x;
+                positions[i3+1] = horsePlayerInstance.group.position.y + 0.5;
+                positions[i3+2] = horsePlayerInstance.group.position.z;
+
+                velocities[i3] = directionVector.x * particleSpeed + (Math.random() - 0.5) * 0.1;
+                velocities[i3+1] = directionVector.y * particleSpeed + (Math.random() - 0.5) * 0.1;
+                velocities[i3+2] = directionVector.z * particleSpeed + (Math.random() - 0.5) * 0.1;
+                
+                sizes[particleIndex] = Math.random() * particleSize + particleSize / 2;
+                
+                particleIndex = (particleIndex + 1) % particleCount;
+            }
+
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+            particleSystem.geometry.attributes.size.needsUpdate = true;
+        }
+
+        // 動畫循環 (Animation Loop)
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            
+            if (horsePlayerInstance) {
+                horsePlayerInstance.update(delta);
+            }
+
+            camera.fov += (targetFOV - camera.fov) * 0.05;
+            camera.updateProjectionMatrix();
+
+            if (horsePlayerInstance && horsePlayerInstance.isLoaded) {
+                if (isColorChanging) {
+                    currentOutlineColor.lerp(targetOutlineColor, colorChangeSpeed);
+                    outlinePass.visibleEdgeColor.copy(currentOutlineColor);
+                    particleMaterial.color.copy(currentOutlineColor);
+
+                    if (clock.elapsedTime - lastColorChangeTime > colorChangeInterval) {
+                        targetOutlineColor.setHSL(Math.random(), 1, 0.5);
+                        lastColorChangeTime = clock.elapsedTime;
+                    }
+                }
+                
+                // 調整後的粒子開關邏輯
+                if (isParticleActive) {
+                    if (scene.children.indexOf(particleSystem) === -1) {
+                        // 如果粒子系統不在場景中，則加入
+                        scene.add(particleSystem);
+                        // 並將其位置重設，防止首次顯示時位置不正確
+                        const positions = particleSystem.geometry.attributes.position.array;
+                        for (let i = 0; i < particleCount * 3; i++) {
+                            positions[i] = 0;
+                        }
+                        particleSystem.geometry.attributes.position.needsUpdate = true;
+                    }
+                    updateParticles();
+                } else {
+                    if (scene.children.indexOf(particleSystem) !== -1) {
+                        // 如果粒子系統在場景中，則移除
+                        scene.remove(particleSystem);
+                    }
+                }
+            }
+
+            controls.update();
+            composer.render();
+        }
+
+        // 處理視窗大小改變
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // --- UI 控制邏輯 ---
+        function setupUI() {
+            const uiElements = [
+                { id: 'bloom-strength', prop: 'strength', obj: bloomPass },
+                { id: 'bloom-radius', prop: 'radius', obj: bloomPass },
+                { id: 'bloom-threshold', prop: 'threshold', obj: bloomPass },
+                { id: 'outline-glow', prop: 'edgeGlow', obj: outlinePass },
+                { id: 'outline-thickness', prop: 'edgeThickness', obj: outlinePass },
+                { id: 'outline-strength', prop: 'edgeStrength', obj: outlinePass },
+                { id: 'color-speed', prop: 'colorChangeSpeed', global: true },
+                { id: 'color-interval', prop: 'colorChangeInterval', global: true },
+                { id: 'particle-size', prop: 'size', obj: particleMaterial, isMaterial: true },
+                { id: 'particle-speed', prop: 'particleSpeed', global: true },
+                { id: 'particle-lifetime', prop: 'particleLifetime', global: true },
+            ];
+        
+            uiElements.forEach(item => {
+                const rangeInput = document.getElementById(item.id);
+                const numberInput = document.getElementById(`${item.id}-value`);
+        
+                if (rangeInput && numberInput) {
+                    rangeInput.addEventListener('input', (e) => {
+                        const value = parseFloat(e.target.value);
+                        numberInput.value = value.toFixed(item.isNumber ? 0 : 2);
+                        if (item.global) {
+                            window[item.prop] = value;
+                        } else if (item.isMaterial) {
+                            item.obj[item.prop] = value;
+                        } else {
+                            item.obj[item.prop] = value;
+                        }
+                    });
+        
+                    numberInput.addEventListener('input', (e) => {
+                        let value = parseFloat(e.target.value);
+                        if (isNaN(value)) {
+                            value = 0;
+                        }
+                        if (value < parseFloat(rangeInput.min)) value = parseFloat(rangeInput.min);
+                        if (value > parseFloat(rangeInput.max)) value = parseFloat(rangeInput.max);
+                        rangeInput.value = value;
+                        if (item.global) {
+                            window[item.prop] = value;
+                        } else if (item.isMaterial) {
+                            item.obj[item.prop] = value;
+                        } else {
+                            item.obj[item.prop] = value;
+                        }
+                    });
+                }
+            });
+            
+            // 粒子總數
+            const particleCountInput = document.getElementById('particle-count');
+            particleCountInput.addEventListener('input', (e) => {
+                const value = parseInt(e.target.value, 10);
+                if (value > 0) {
+                     console.warn('更改粒子總數需重新載入頁面才能生效。');
+                }
+                particleCount = value;
+            });
+        
+            // 初始化 UI 滑桿值
+            document.getElementById('bloom-strength').value = bloomPass.strength;
+            document.getElementById('bloom-radius').value = bloomPass.radius;
+            document.getElementById('bloom-threshold').value = bloomPass.threshold;
+            document.getElementById('outline-glow').value = outlinePass.edgeGlow;
+            document.getElementById('outline-thickness').value = outlinePass.edgeThickness;
+            document.getElementById('outline-strength').value = outlinePass.edgeStrength;
+            document.getElementById('particle-count').value = particleCount;
+            document.getElementById('particle-speed').value = particleSpeed;
+            document.getElementById('particle-lifetime').value = particleLifetime;
+            
+            // 變色開關邏輯
+            const colorToggle = document.getElementById('color-toggle');
+            colorToggle.addEventListener('change', (e) => {
+                isColorChanging = e.target.checked;
+            });
+
+            // 粒子開關邏輯
+            const particleToggle = document.getElementById('particle-toggle');
+            particleToggle.addEventListener('change', (e) => {
+                isParticleActive = e.target.checked;
+            });
+
+            // 粒子方向邏輯
+            const particleDirectionSelect = document.getElementById('particle-direction');
+            particleDirectionSelect.addEventListener('change', (e) => {
+                particleDirection = e.target.value;
+            });
+        }
+
+        setupUI();
+        // 開始動畫
+        animate();
+    </script>
+</body>
+</html>
