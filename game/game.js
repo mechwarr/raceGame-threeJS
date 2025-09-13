@@ -9,6 +9,8 @@ import { UIController } from './systems/ui/UIController.js';
 import { GameReadyView } from './systems/ui/views/GameReadyView.js';
 import { GameView } from './systems/ui/views/GameView.js';
 import { FinishedView } from './systems/ui/views/FinishedView.js';
+// ★ 新增：相機調校工具（可選開關）
+import { mountEditTool } from './systems/EditTool.js';
 
 // 場景/馬匹載入
 import { createRenderer, createScene, setupLights } from './SceneSetup.js';
@@ -56,6 +58,8 @@ let maxLaneZ = -Infinity;
 
 let forcedTop5Rank = null; // 由 onGameStart 設定
 
+let editTool = null;
+
 // —— 倒數期間：就位補間
 let standbyPlan = null; // { items:[{i,from,to,t0,dur}], done }
 
@@ -65,15 +69,22 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const noise = (t, i) => Math.sin(t * 5 + i * 1.3) * 0.3;
 
+
+// 建立注入方法
+const getCAM = () => CAM;
+const getCamera = () => camera;
+const getDirVec = () => FIXED_DIR; // 若你改成 CAM.DIR，這裡回傳一個共享 THREE.Vector3 即可
+
+
 // ======== 透視攝影機參數（唯一模式） ========
 const CAM = {
-  VIEW_HEIGHT: 20,
-  FRAMING_BIAS_Y: 0.30,
+  VIEW_HEIGHT: 30,
+  FRAMING_BIAS_Y: 0.80,
   FOV_DEG: 55,
   LOOK_AHEAD_MIN: 8,
-  SIDE_READY: { x: startLineX, z: 90, h: 70, lerp: 0.18 },
-  SIDE_RUN: { z: 90, h: 70, lerp: 0.18 },
-  SIDE_FIN: { x: finishLineX, z: 90, h: 70, lerp: 0.15 },
+  SIDE_READY: { x: startLineX, z: 180, h: 60, lerp: 0.18 },
+  SIDE_RUN: { z: 180, h: 60, lerp: 0.18 },
+  SIDE_FIN: { x: finishLineX, z: 180, h: 60, lerp: 0.15 },
   AWARD: {
     ZOOM: 2.0,
     POS: { x: 7, y: 5, z: 10 },
@@ -82,7 +93,7 @@ const CAM = {
 };
 
 // ===== 固定相機視角方向：正規化 (0, -0.5, -1) =====
-const FIXED_DIR = new THREE.Vector3(0, -0.5, -1).normalize();
+const FIXED_DIR = new THREE.Vector3(0, -0.4, -1);
 
 // ===== 頒獎台（在賽場中間且視角拉近）=====
 const PODIUM_SCALE = 2;
@@ -112,7 +123,8 @@ function applyVerticalFraming(pos, look) {
 function placeWithFixedDir(lookX, eyeH, eyeZ) {
   const d = distanceForViewHeight(CAM.VIEW_HEIGHT, CAM.FOV_DEG, CAM.LOOK_AHEAD_MIN);
   const pos = new THREE.Vector3(lookX, eyeH, eyeZ);
-  const look = pos.clone().add(FIXED_DIR.clone().multiplyScalar(d));
+  const dir = FIXED_DIR.clone().normalize();
+  const look = pos.clone().add(dir.multiplyScalar(d));
   applyVerticalFraming(pos, look);
   return { pos, look };
 }
@@ -158,7 +170,7 @@ function initThree() {
   });
 
   // 5) 場景地形/賽道
-  buildField(scene, { trackLength, laneCount, startLineX, finishLineX, laneGap: 6 });
+  buildField(scene, { trackLength, laneCount, startLineX, finishLineX, laneGap: 22 });
 
   // 6) Audio + UI
   audioSystem = new AudioSystem();
@@ -185,7 +197,7 @@ async function loadHorses() {
     laneCount, startLineX, HORSE_ROOT, HORSE_GLTF, HORSE_TEX,
     onProgress: reportProgress
   });
-  horses   = result.horses;
+  horses = result.horses;
   minLaneZ = result.minLaneZ;
   maxLaneZ = result.maxLaneZ;
   log(`[Ready] laneZ range: min=${minLaneZ}, max=${maxLaneZ}`);
@@ -291,6 +303,10 @@ function buildFinalOrder() {
 // ===== 相機控制（固定視角；Pause 保持當前畫面） =====
 function updateCamera() {
   if (gameState === STATE.Paused) return;
+
+  // 在 animate() 或 updateCamera() 每幀更新距離浮層
+  const dNow = distanceForViewHeight(CAM.VIEW_HEIGHT, CAM.FOV_DEG, CAM.LOOK_AHEAD_MIN);
+  editTool?.update(dNow, gameState);
 
   const gotoPose = (lookX, h, z, lerp) => {
     const { pos, look } = placeWithFixedDir(lookX, h, z);
@@ -515,6 +531,7 @@ function onGameEnd() {
   window.removeEventListener('message', onMsg);
   window.removeEventListener('resize', resize);
   countdownOverlay?.remove();
+  editTool.destroy();
   ui?.destroy?.();
   if (renderer) { renderer.dispose(); renderer.forceContextLoss?.(); }
 }
@@ -543,9 +560,20 @@ window.addEventListener('message', onMsg);
     reportProgress(20);
 
     await buildRoadBetween(scene, {
-      startX: startLineX, endX: finishLineX,
-      laneCount, segments: 3, extraSegments: 2, laneGap: 6, baseY: -20,
+      startX: startLineX,
+      endX: finishLineX,
+      laneCount,
+      segments: 3,
+      extraSegments: 2,
+      laneGap: 6,
+      baseY: -20,
+      addLaneLines: true,
+      lineThickness: 0.3,
+      lineLength: 100000,
+      lineColor: 0xffffff,
+      lineYOffset: 0.02,
     });
+
     reportProgress(40);
 
     await loadHorses();
@@ -553,6 +581,10 @@ window.addEventListener('message', onMsg);
     reportProgress(100);
     reportReady();
     banner('three.js + 馬匹載入完成', true);
+
+    // 在 boot() 裡（initThree() 後）
+    editTool = mountEditTool(false, { getCAM, getCamera, getDirVec, startLineX });
+
   } catch (e) {
     reportError(e); banner('初始化失敗', false); log('[Boot Error]', e);
     if (location.protocol === 'file:') { log('提示：請改用本機 HTTP 伺服器（例如 `npx http-server`）。'); }

@@ -4,7 +4,7 @@ import { GLTFLoader } from 'https://unpkg.com/three@0.165.0/examples/jsm/loaders
 
 export class RoadModel {
   constructor(name = 'RoadModel') {
-    this.url = '/public/road/road_nograss_02s.gltf'; // 固定路徑
+    this.url = '/public/road/road_scaled_0913.gltf'; // 固定路徑
     this.name = name;
     this.object = null;
   }

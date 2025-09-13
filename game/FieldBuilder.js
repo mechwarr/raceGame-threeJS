@@ -18,9 +18,8 @@ export function buildField(scene, {
         const geometry = new THREE.PlaneGeometry(width, length);
         const material = new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide });
         const line = new THREE.Mesh(geometry, material);
-        const start_offset = 1;
         line.rotation.x = -Math.PI / 2;
-        line.position.set(x , 0.4, 0);
+        line.position.set(x , 0, 0);
 
         scene.add(line);
         return line;
