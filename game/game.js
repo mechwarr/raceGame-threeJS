@@ -505,7 +505,7 @@ function playerStandby(secs) {
     const to = hObj.startPos.clone();
     const faceRight = (to.x - from.x) >= 0;
     setHorseRot(i, faceRight);
-    hObj.player.playWalk(true, 0.15, 1, Math.random());
+    hObj.player.playWalk(true, 0.15, 2, Math.random());
     items.push({ i, from, to, t0, dur });
   }
   standbyPlan = { items, done: false };

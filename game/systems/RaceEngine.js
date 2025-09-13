@@ -127,7 +127,7 @@ export class RaceEngine {
       if (pct >= this.SLOWMO.triggerPct) {
         this.SLOWMO.active = true;
         this.SLOWMO.triggeredAt = t;
-        this.log?.(`[SlowMo] triggered at ${Math.round(pct*100)}% (rate=${this.SLOWMO.rate})`);
+        //this.log?.(`[SlowMo] triggered at ${Math.round(pct*100)}% (rate=${this.SLOWMO.rate})`);
 
         // ★ 新增：建立 SlowMo 當幀「速度快照」
         const N = this.cfg.laneCount;
@@ -275,7 +275,7 @@ export class RaceEngine {
 
       if (this.SLOWMO.active) {
         this.SLOWMO.active = false;
-        this.log?.('[SlowMo] deactivated (first horse finished)');
+        //this.log?.('[SlowMo] deactivated (first horse finished)');
       }
 
       // 進入鎖速模式
@@ -284,7 +284,7 @@ export class RaceEngine {
       // 如在 Lock 流程，切到 FinishGuard（語意：維持秩序到全員到線）
       if (this.lockStage === this.LOCK_STAGE.PreLock || this.lockStage === this.LOCK_STAGE.LockStrong) {
         this.lockStage = this.LOCK_STAGE.FinishGuard;
-        this.log?.('[Lock] FinishGuard (maintain order until all finished)');
+        //this.log?.('[Lock] FinishGuard (maintain order until all finished)');
       }
     }
 
