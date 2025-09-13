@@ -11,8 +11,8 @@ import { GameView } from './systems/ui/views/GameView.js';
 import { FinishedView } from './systems/ui/views/FinishedView.js';
 
 // ★ HorsePlayer
-import { HorsePlayer } from './horse-player-three.js';
 import { createRenderer, createScene, setupLights } from './SceneSetup.js';
+import { loadHorsesAsync } from './systems/HorsesFactory.js';
 
 // ===== 小工具 =====
 const $log = document.getElementById('log');
@@ -327,46 +327,15 @@ function initThree() {
   clock = new THREE.Clock();
   animate();
 }
-
-
 // ★ 建立 11 匹馬（用 HorsePlayer）
 async function loadHorses() {
-  horses = [];
-  const tasks = [];
-  minLaneZ = +Infinity; maxLaneZ = -Infinity;
-
-  for (let i = 0; i < laneCount; i++) {
-    const playerNo = i + 1;
-    const laneZ = (i - (laneCount - 1) / 2) * 6;
-    if (laneZ < minLaneZ) minLaneZ = laneZ;
-    if (laneZ > maxLaneZ) maxLaneZ = laneZ;
-
-    const startPos = new THREE.Vector3(startLineX, 0, laneZ);
-
-    const randX = rand2(startLineX - 80, startLineX + 80);
-    const randY = 0;
-    const randZ = laneZ;
-    const faceRight = Math.random() < 0.5;
-
-    const hp = new HorsePlayer(scene, HORSE_ROOT, HORSE_GLTF, playerNo, {
-      textureFolder: HORSE_TEX,
-      fps: 30, scale: 0.5, castShadow: true, receiveShadow: true,
-      position: new THREE.Vector3(randX, randY, randZ),
-      rotation: new THREE.Euler(0, faceRight ? Math.PI / 2 : -Math.PI / 2, 0),
-    });
-
-    horses.push({ player: hp, startPos, laneZ, faceRight });
-    tasks.push(hp.loadAsync());
-  }
-
-  let done = 0;
-  tasks.forEach(p => p.then(() => { done++; reportProgress(60 + Math.round((done / tasks.length) * 35)); }));
-  await Promise.all(tasks);
-
-  for (let i = 0; i < laneCount; i++) {
-    horses[i]?.player?.playIdle01(true, 0, 1, rand2(0, 1));
-  }
-
+  const result = await loadHorsesAsync(scene, {
+    laneCount, startLineX, HORSE_ROOT, HORSE_GLTF, HORSE_TEX,
+    onProgress: reportProgress
+  });
+  horses   = result.horses;
+  minLaneZ = result.minLaneZ;
+  maxLaneZ = result.maxLaneZ;
   log(`[Ready] laneZ range: min=${minLaneZ}, max=${maxLaneZ}`);
 }
 
