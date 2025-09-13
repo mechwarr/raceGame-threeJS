@@ -1,4 +1,4 @@
-// systems/SceneSetup.js
+// SceneSetup.js
 import * as THREE from 'https://unpkg.com/three@0.165.0/build/three.module.js';
 
 /**
@@ -45,12 +45,16 @@ export function createScene(opts = {}) {
  * @param {{ambientIntensity?: number, hemiIntensity?: number, hemiSky?: number, hemiGround?: number}} [opts]
  * @returns {{ambient: THREE.AmbientLight, hemisphere: THREE.HemisphereLight}}
  */
+// systems/SceneSetup.js（選擇性修改示例）
 export function setupLights(scene, opts = {}) {
   const {
     ambientIntensity = 3.0,
     hemiIntensity = 0.65,
     hemiSky = 0xeaf2ff,
     hemiGround = 0x1f262d,
+    skybox = true,                 // ← 新增：預設載入 skybox
+    skyboxPath = '../public/skybox/', // ← 可自訂路徑
+    skyboxFiles = ['yonder_ft.jpg', 'yonder_bk.jpg', 'yonder_up.jpg', 'yonder_dn.jpg', 'yonder_rt.jpg', 'yonder_lf.jpg'],
   } = opts;
 
   const ambient = new THREE.AmbientLight(0xffffff, ambientIntensity);
@@ -60,5 +64,10 @@ export function setupLights(scene, opts = {}) {
   hemisphere.position.set(0, 1, 0);
   scene.add(hemisphere);
 
+  if (skybox) {
+    const loader = new THREE.CubeTextureLoader().setPath(skyboxPath);
+    const texture = loader.load(skyboxFiles);
+    scene.background = texture;
+  }
   return { ambient, hemisphere };
 }

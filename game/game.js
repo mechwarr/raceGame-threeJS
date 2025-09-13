@@ -12,6 +12,7 @@ import { FinishedView } from './systems/ui/views/FinishedView.js';
 
 // ★ HorsePlayer
 import { HorsePlayer } from './horse-player-three.js';
+import { createRenderer, createScene, setupLights } from './SceneSetup.js';
 
 // ===== 小工具 =====
 const $log = document.getElementById('log');
@@ -57,7 +58,7 @@ const randFloat = (a, b) => a + Math.random() * (b - a);
 const rand2 = (a, b) => Math.round(randFloat(a, b) * 100) / 100;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
-const easeInOutCubic = (x) => (x < 0.5) ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2;
+const easeInOutCubic = (x) => (x < 0.5) ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 
 // ----- Ready 倒數期間：就位計畫 -----
 let standbyPlan = null; // { items:[{i,from,to,t0,dur}], done }
@@ -107,19 +108,19 @@ const SLOWMO = {
 };
 
 // ===== Lock 名次校正（邏輯控制） =====
-const LOCK_STAGE = { None:'None', PreLock:'PreLock', LockStrong:'LockStrong', FinishGuard:'FinishGuard' };
+const LOCK_STAGE = { None: 'None', PreLock: 'PreLock', LockStrong: 'LockStrong', FinishGuard: 'FinishGuard' };
 const LOCK = {
   preTriggerPct: 0.70,   // 弱校正開始（可略過）
-  triggerPct:    0.75,   // ★ 主要觸發點（你指定）
-  releasePct:    0.72,   // 遲滯（理論上不會回退）
-  minGapBase:    0.60,   // 名次間最小車距（Lock 期間軟保護）
-  minGapMax:     1.20,
-  gapWidenFrom:  0.90,   // 進入末段時逐步放大最小車距，畫面更穩
-  gapWidenTo:    1.00,
+  triggerPct: 0.75,   // ★ 主要觸發點（你指定）
+  releasePct: 0.72,   // 遲滯（理論上不會回退）
+  minGapBase: 0.60,   // 名次間最小車距（Lock 期間軟保護）
+  minGapMax: 1.20,
+  gapWidenFrom: 0.90,   // 進入末段時逐步放大最小車距，畫面更穩
+  gapWidenTo: 1.00,
   // 名次回授增益（PreLock / LockStrong / FinishGuard）
   gain: {
-    Pre:   { boost: 0.20, brake: 0.15, pos: 0.020, forcedBoost: 0.60, forcedBrake: 0.80 },
-    Strong:{ boost: 0.90, brake: 0.70, pos: 0.050, forcedBoost: 1.20, forcedBrake: 1.20 },
+    Pre: { boost: 0.20, brake: 0.15, pos: 0.020, forcedBoost: 0.60, forcedBrake: 0.80 },
+    Strong: { boost: 0.90, brake: 0.70, pos: 0.050, forcedBoost: 1.20, forcedBrake: 1.20 },
     Guard: { boost: 0.30, brake: 0.25, pos: 0.030, forcedBoost: 0.80, forcedBrake: 0.90 },
   },
   // LockStrong 取消速度上限；其他階段保留
@@ -144,7 +145,7 @@ const PHASE_SPLITS = { start: 0.60, setup: 0.85, lock: 0.97 };
 // —— 節奏調制：忽快忽慢（Lock 期間權重趨近 0，避免破壞名次收斂）
 const RHYTHM_CONF = {
   segment: { durMin: 0.9, durMax: 1.4, multMin: 0.20, multMax: 3.0, easeSec: 0.25 },
-  burst:   { probPerSec: 0.45, ampMin: 0.06, ampMax: 0.10, durSec: 0.8, cooldownSec: 0.6 },
+  burst: { probPerSec: 0.45, ampMin: 0.06, ampMax: 0.10, durSec: 0.8, cooldownSec: 0.6 },
   weightByPhase: { start: 1.00, mid: 1.00, setup: 0.30, lock: 0.12 },
   bounds: { min: 0.75, max: 1.35 },
 };
@@ -279,31 +280,42 @@ function applyCameraResize() {
 function resize() { applyCameraResize(); }
 window.addEventListener('resize', resize);
 
-// ===== 初始化 three.js 與場景 =====
+// ===== 初始化場景 =====
 function initThree() {
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  // 1) Renderer：交給 SceneSetup 建立（維持 antialias/alpha 與 toneMapping 設定）
+  renderer = createRenderer(canvas, {
+    antialias: true,
+    alpha: true,
+    pixelRatioCap: 2,     // 與原本一致
+  });
 
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
+  // 2) Scene：預設黑色；注意：setupLights 內會載入 skybox 並覆蓋 scene.background
+  //    如果你想要透明背景，可改成 createScene({ background: null })
+  scene = createScene({ background: 0x000000 });
 
+  // 3) Camera：維持你的透視相機配置
   createCamera();
   applyCameraResize();
 
-  const amb = new THREE.AmbientLight(0xffffff, 3.0); scene.add(amb);
-  const hemi = new THREE.HemisphereLight(0xeaf2ff, 0x1f262d, 0.65); hemi.position.set(0, 1, 0); scene.add(hemi);
+  // 4) Lights + Skybox：與你現在邏輯一致（Ambient + Hemisphere）
+  //    setupLights 會另外載入 'public/skybox/*.jpg' 作為 CubeTexture 背景
+  setupLights(scene, {
+    ambientIntensity: 3.0,
+    hemiIntensity: 0.65,
+    hemiSky: 0xeaf2ff,
+    hemiGround: 0x1f262d,
+  });
 
+  // 5) 場景地形/賽道維持不變
   buildField(scene, { trackLength, laneCount, startLineX, finishLineX, laneGap: 6 });
 
+  // 6) Audio + UI 維持不變
   audioSystem = new AudioSystem();
   ui = new UIController({
     providers: {
       getGameId: () => currentGameId,
-      getRanking: () => getRankingLabels(),  // UI 排名：finalRank 在前 + 動態補位
-      getTop5: () => getTop5Labels(),        // Top5：finalRank 的前五
+      getRanking: () => getRankingLabels(),
+      getTop5: () => getTop5Labels(),
     },
   });
   ui.register('ready', GameReadyView);
@@ -311,9 +323,11 @@ function initThree() {
   ui.register('finished', FinishedView);
   ui.show('ready');
 
+  // 7) 時鐘與主迴圈
   clock = new THREE.Clock();
   animate();
 }
+
 
 // ★ 建立 11 匹馬（用 HorsePlayer）
 async function loadHorses() {
@@ -787,9 +801,9 @@ function animate() {
     // —— Lock 期間需要的中間資料
     const isLocking = inAnyLock();
     const stageGain = (lockStage === LOCK_STAGE.PreLock) ? LOCK.gain.Pre
-                      : (lockStage === LOCK_STAGE.LockStrong) ? LOCK.gain.Strong
-                      : (lockStage === LOCK_STAGE.FinishGuard) ? LOCK.gain.Guard
-                      : null;
+      : (lockStage === LOCK_STAGE.LockStrong) ? LOCK.gain.Strong
+        : (lockStage === LOCK_STAGE.FinishGuard) ? LOCK.gain.Guard
+          : null;
 
     const currOrder = computeCurrentOrderIdx();
     const currRankMap = {}; // index → rank(1..N)
@@ -808,8 +822,8 @@ function animate() {
 
       // 視覺噪聲：Lock 期間最穩
       const noiseScale = isLocking ? SPEED_CONF.noiseScaleLock
-                        : inPhase('setup') ? SPEED_CONF.noiseScaleSetup
-                        : SPEED_CONF.noiseScaleStart;
+        : inPhase('setup') ? SPEED_CONF.noiseScaleSetup
+          : SPEED_CONF.noiseScaleStart;
 
       // 基礎 v*：Setup 後用剩距/剩時；Setup 前用 baseline
       let vStar;
