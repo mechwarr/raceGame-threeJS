@@ -1,138 +1,150 @@
-// FinishedView：置中於 three-canvas 的結果面板（前五名、依色票顯示、平行四邊形）
+// FinishedView：置中於 three-canvas 的結果面板（前五名、依色票顯示、水平排列；16:9 RWD）
 export class FinishedView {
   mount(root, ctx){
     this.ctx = ctx;
     this.root = root;
-
-    // 找 canvas 作為定位基準；找不到就退回 root
     this.canvas = document.getElementById('three-canvas') || root;
 
-    // 中央面板
+    // ===== 可調參數 =====
+    this.PANEL_SCALE = 0.92;         // 面板相對於 canvas 的最大佔比
+    this.GAP_PERCENT = 2;            // 錦旗之間的 gap（% of panel width）
+    this.ITEMS = 5;                  // 錦旗數量（最多 5）
+    // 每個錦旗容器的寬度百分比（平均分配）
+    this.ITEM_WIDTH_PERCENT = (100 - (this.ITEMS - 1) * this.GAP_PERCENT) / this.ITEMS; // 例如 18.4%
+
+    // 中央面板：固定定位、置中；大小在 _positionToCanvas 依 16:9 計算
     this.panel = document.createElement('div');
     Object.assign(this.panel.style, {
-      position: 'fixed',                 // 用 viewport 座標鎖在 canvas 中心
+      position: 'fixed',
       left: '0px',
       top: '0px',
-      transform: 'translate(-50%, -50%)',
-      width: '40vw',                     // 先給個預設，之後依 canvas 重算
-      maxWidth: '560px',
-      minWidth: '280px',
-      background: 'rgba(0,0,0,0.7)',     // 黑底半透明
-      color: '#e7eef6',
-      border: 'none',                    // 無邊框
-      borderRadius: '16px',
-      backdropFilter: 'blur(6px)',
-      boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-      padding: '16px 18px',
+      transform: 'translate(-50%, -20%)',
       display: 'flex',
-      flexDirection: 'column',
-      gap: '10px',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
       zIndex: 10010,
       pointerEvents: 'auto',
       textAlign: 'center',
+      // 讓 gap 用 %：寫在 _positionToCanvas
     });
 
-    // 標題
-    const title = document.createElement('div');
-    title.textContent = '🏆 本局結果（前五名）';
-    Object.assign(title.style, { fontSize:'16px', fontWeight:'700', letterSpacing:'0.3px' });
-
-    // 前五名列表容器
-    this.list = document.createElement('div');
-    Object.assign(this.list.style, {
-      display:'flex',
-      flexDirection:'column',
-      gap:'8px',
-      marginTop:'2px',
-    });
-
-    this.panel.append(title, this.list);
+    this.panel.innerHTML = '';
     document.body.appendChild(this.panel);
 
-    // 依 canvas 定位與寬度（置中，寬度為 canvas 的 40%）
+    // 定位 + 16:9 尺寸（相對 canvas）
     this._positionToCanvas = () => {
       const rect = this.canvas.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
-      const w = Math.max(280, Math.min(560, Math.round(rect.width * 0.4)));
+
+      // 在 canvas 內取能容納的 16:9 最大框
+      const maxW = rect.width  * this.PANEL_SCALE;
+      const maxH = rect.height * this.PANEL_SCALE;
+      let panelW = maxW;
+      let panelH = panelW * 9 / 16;
+      if (panelH > maxH) { // 高度超了就以高度為準回推寬度
+        panelH = maxH;
+        panelW = panelH * 16 / 9;
+      }
+
+      this._lastPanelWidth = panelW;
+      this._lastPanelHeight = panelH;
 
       Object.assign(this.panel.style, {
-        left: cx + 'px',
-        top:  cy + 'px',
-        width: w + 'px',
+        left: `${cx}px`,
+        top:  `${cy}px`,
+        width: `${panelW}px`,
+        height: `${panelH}px`,
+        gap: `${this.GAP_PERCENT}%`,   // % of panel width
+      });
+
+      // 不必重建 DOM（因為大多用 %），但要更新字級等需 px 的部分
+      this._applyResponsiveFont();
+    };
+
+    this._renderTop5 = () => {
+      const top5 = this.ctx.providers.getTop5?.() || [];
+      this.panel.innerHTML = '';
+
+      for (let i = 0; i < this.ITEMS; i++) {
+        const label = top5[i] || '';
+
+        // 每個錦旗的容器：用 % 寬、維持相對高度比例（可依圖比例微調）
+        const pennantContainer = document.createElement('div');
+        Object.assign(pennantContainer.style, {
+          position: 'relative',
+          width: `${this.ITEM_WIDTH_PERCENT}%`, // 以 panel 寬度的百分比
+          // 若想所有錦旗等高，可開啟固定比例（依你的 PNG 外觀調整）
+          // aspectRatio: '3 / 4',
+          height: 'auto',
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+        });
+
+        const pennantImg = document.createElement('img');
+        pennantImg.src = `/public/finished/pennant0${i+1}.png`;
+        Object.assign(pennantImg.style, {
+          width: '100%',   // 填滿容器寬
+          height: 'auto',  // 高度依圖片比例
+          display: 'block',
+        });
+
+        const horseNumber = document.createElement('div');
+        horseNumber.textContent = label;
+        Object.assign(horseNumber.style, {
+          position: 'absolute',
+          top: '60%',                  // 以錦旗容器高度百分比定位
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          color: '#fff',
+          fontWeight: 'bold',
+          textShadow: '0 0 4px rgba(0,0,0,0.8)',
+          letterSpacing: '0.5px',
+          display: label ? 'block' : 'none',
+          // fontSize 由 _applyResponsiveFont 依 panel 寬度動態套用
+        });
+
+        // 打標籤方便 _applyResponsiveFont() 取用
+        horseNumber.dataset.role = 'horse-number';
+
+        pennantContainer.append(pennantImg, horseNumber);
+        this.panel.appendChild(pennantContainer);
+      }
+
+      // 首次渲染時也套一次字級
+      this._applyResponsiveFont();
+    };
+
+    // 依 panel 寬度換算字級（px），其餘尺寸都用 %
+    this._applyResponsiveFont = () => {
+      if (!this._lastPanelWidth) return;
+      const panelW = this._lastPanelWidth;
+
+      // 算出單面錦旗的實際 px 寬：panelW * (ITEM_WIDTH_PERCENT/100)
+      const itemW = panelW * (this.ITEM_WIDTH_PERCENT / 100);
+
+      // 字級 ≈ 錦旗寬的 30%（可依視覺調小/調大）
+      const numberFontPx = Math.max(14, itemW * 0.30);
+
+      this.panel.querySelectorAll('[data-role="horse-number"]').forEach(el => {
+        el.style.fontSize = `${numberFontPx}px`;
       });
     };
+
     this._positionToCanvas();
+    this._renderTop5();
 
     // 監聽尺寸/捲動/Canvas 變更
-    this._onResize = () => this._positionToCanvas();
-    this._onScroll = () => this._positionToCanvas();
+    this._onResize = () => { this._positionToCanvas(); };
+    this._onScroll = () => { this._positionToCanvas(); };
     window.addEventListener('resize', this._onResize, { passive:true });
     window.addEventListener('scroll', this._onScroll, { passive:true });
     this._ro = new ResizeObserver(() => this._positionToCanvas());
     this._ro.observe(this.canvas);
-
-    // 渲染前五名
-    this._renderTop5();
-  }
-
-  _renderTop5(){
-    const top5 = this.ctx.providers.getTop5?.() || [];
-    this.list.innerHTML = '';
-
-    // 顏色表
-    const COLOR = {
-      1:'#F5F55B',  2:'#0605D9',  3:'#5B5A5D',  4:'#CD733B',
-      5:'#5DADA9',  6:'#24276F',  7:'#B1B1B1',  8:'#C73F39',
-      9:'#601E1A', 10:'#355D3E', 11:'#52194E',
-    };
-    const SLANT = 16; // 平行四邊形斜邊像素
-
-    top5.forEach((label, i) => {
-      const num = parseInt((label+'').match(/\d+/)?.[0] || '0', 10);
-      const bg  = COLOR[num] || '#444';
-
-      // 每一列（排名 + 色塊）
-      const row = document.createElement('div');
-      Object.assign(row.style, {
-        display:'flex',
-        alignItems:'center',
-        justifyContent:'center',
-        gap:'10px',
-      });
-
-      // 排名徽記（1/2/3 用獎牌，其餘用數字）
-      const rankBadge = document.createElement('div');
-      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `第${i+1}`;
-      rankBadge.textContent = medal;
-      Object.assign(rankBadge.style, {
-        minWidth:'46px',
-        textAlign:'right',
-        fontWeight:'700',
-      });
-
-      // 平行四邊形色塊：顯示「#號碼」
-      const pill = document.createElement('div');
-      pill.textContent = label;
-      Object.assign(pill.style, {
-        height:'28px',
-        lineHeight:'28px',
-        padding:'0 14px',
-        fontSize:'14px',
-        fontWeight:'800',
-        color:'#fff',
-        background:bg,
-        clipPath: `polygon(${SLANT}px 0, 100% 0, calc(100% - ${SLANT}px) 100%, 0 100%)`,
-        display:'inline-flex',
-        alignItems:'center',
-        justifyContent:'center',
-        boxShadow:'0 0 0 1px rgba(0,0,0,0.18) inset',
-        letterSpacing:'0.5px',
-      });
-
-      row.append(rankBadge, pill);
-      this.list.appendChild(row);
-    });
   }
 
   onTick(){ /* 完賽結果固定，不需更新 */ }

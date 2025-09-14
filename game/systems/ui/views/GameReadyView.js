@@ -138,12 +138,8 @@ export class GameReadyView {
         remain -= 1;
         this._countdownTimer = setTimeout(tick, 1000);
       } else {
-        this.countdownEl.textContent = 'GO!';
-        // GO 顯示 600ms 後移除 & 回呼
-        this._countdownTimer = setTimeout(() => {
           this._clearCountdown();
           try { onFinish && onFinish(); } catch (_) {}
-        }, 600);
       }
     };
     tick();

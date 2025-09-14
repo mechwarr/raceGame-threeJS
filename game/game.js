@@ -44,7 +44,7 @@ let gameState = STATE.Ready;
 let renderer, scene, camera, clock;
 let horses = []; // { player: HorsePlayer, startPos: THREE.Vector3, laneZ:number, faceRight:boolean }
 const laneCount = 11;
-const trackLength = 1000;
+const trackLength = 10;
 const startLineX = -trackLength / 2;
 const finishLineX = trackLength / 2;
 const finishDetectX = finishLineX - 0.5; // 衝線判定（略早一點）
@@ -69,12 +69,10 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const noise = (t, i) => Math.sin(t * 5 + i * 1.3) * 0.3;
 
-
 // 建立注入方法
 const getCAM = () => CAM;
 const getCamera = () => camera;
 const getDirVec = () => FIXED_DIR; // 若你改成 CAM.DIR，這裡回傳一個共享 THREE.Vector3 即可
-
 
 // ======== 透視攝影機參數（唯一模式） ========
 const CAM = {
@@ -86,21 +84,156 @@ const CAM = {
   SIDE_RUN: { z: 180, h: 60, lerp: 0.18 },
   SIDE_FIN: { x: finishLineX, z: 180, h: 60, lerp: 0.15 },
   AWARD: {
-    ZOOM: 2.0,
-    POS: { x: 7, y: 5, z: 10 },
-    LOOK: { x: 0, y: 2, z: 0 },
+    ZOOM: 0.3,
+    POS: { x: -50, y: 8, z: 0 },   // y=相機高度；x/z 不再用來決定角度（可忽略）
+    LOOK: { x: 0, y: 5, z: 0 },
+    AZIMUTH_DEG: 90,               // ★ 新增：繞頒獎台的水平角度（0=正面，90=右側，-90=左側，180=背面）
+    DIST_SCALE: 1.0                // ★ 新增：距離倍率（可微調遠近，預設 1）
   },
 };
 
-// ===== 固定相機視角方向：正規化 (0, -0.5, -1) =====
+// ===== 固定相機視角方向：正規化 (0, -0.4, -1) =====
 const FIXED_DIR = new THREE.Vector3(0, -0.4, -1);
 
-// ===== 頒獎台（在賽場中間且視角拉近）=====
-const PODIUM_SCALE = 2;
+// ===== 頒獎台（在原點、Z 軸展開；視角拉近）=====
+const PODIUM_SCALE = 10.0; // 整體放大倍率
 const podiumX = 0, podiumZ = 0;
+// ★ 調整間距讓馬不重疊，仍以原點為中心展開
 const podiumGap = 3.0;
 const podiumHeights = [2.2, 1.7, 1.3, 1.0, 0.8];
-let podiumGroup = null;
+let podiumGroup = null; // ★★★ 頒獎台群組
+// 置中到賽道中段（X 軸）
+const podiumMidX = (startLineX + finishLineX) * 0.5;
+
+
+// ★★★ 建立頒獎台幾何（原點附近）
+// — 規格：5 座台階，Z 軸依序 [-2, -1, 0, +1, +2]*gap 展開；高度乘以 PODIUM_SCALE
+function ensurePodium() {
+  if (podiumGroup && podiumGroup.parent) return podiumGroup;
+
+  const s = PODIUM_SCALE;
+  podiumGroup = new THREE.Group();
+  podiumGroup.name = 'PodiumGroup';
+
+  const baseSizeX = 2.2 * s;      // 台面寬（X）
+  const baseSizeZ = 2.2 * s;      // 台面深（Z）
+
+  // 🔧 將「x 軸的排列間距」改為變數 y（你要的命名）
+  const y = podiumGap * s;        // ← 橫向（X）間距，變數名叫 y
+
+  const mats = [
+    new THREE.MeshStandardMaterial({ color: 0xf6d15a }),
+    new THREE.MeshStandardMaterial({ color: 0xc0c0c0 }),
+    new THREE.MeshStandardMaterial({ color: 0xcd7f32 }),
+    new THREE.MeshStandardMaterial({ color: 0x8fa3b0 }),
+    new THREE.MeshStandardMaterial({ color: 0x8fb08f }),
+  ];
+
+  for (let k = 0; k < 5; k++) {
+    const h = podiumHeights[k] * s;
+    const geo = new THREE.BoxGeometry(baseSizeX, h, baseSizeZ);
+    const mesh = new THREE.Mesh(geo, mats[k % mats.length]);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+
+    // 🔧 原本是 Z 軸展開；改成 X 軸展開，Z 固定在賽道中線 0
+    //    中心往左右排開：..., -2y, -1y, 0, +1y, +2y
+    mesh.position.set(podiumMidX + (k - 2) * y, h * 0.5, 0);
+    mesh.name = `Podium_${k + 1}`;
+    podiumGroup.add(mesh);
+  }
+
+  scene.add(podiumGroup);
+  return podiumGroup;
+}
+
+
+// ★★★ 移除頒獎台（新局前清理）
+function destroyPodium() {
+  if (!podiumGroup) return;
+  podiumGroup.traverse(n => {
+    if (n.isMesh) {
+      n.geometry?.dispose?.();
+      if (Array.isArray(n.material)) n.material.forEach(m => m.dispose?.());
+      else n.material?.dispose?.();
+    }
+  });
+  podiumGroup.parent?.remove(podiumGroup);
+  podiumGroup = null;
+}
+
+// ★★★ 僅保留前五名可見，其餘隱藏
+function setOnlyTop5Visible(top5Numbers) {
+  const keepIdx = new Set(top5Numbers.map(n => clamp((n | 0) - 1, 0, laneCount - 1)));
+  for (let i = 0; i < horses.length; i++) {
+    const hObj = horses[i];
+    if (!hObj?.player) continue;
+    hObj.player.group.visible = keepIdx.has(i);
+  }
+}
+
+// ★★★ 顯示全部馬（新局前恢復）
+function showAllHorses() {
+  for (let i = 0; i < horses.length; i++) {
+    const hObj = horses[i];
+    if (!hObj?.player) continue;
+    hObj.player.group.visible = true;
+  }
+}
+
+// ★★★ 讓馬站上頒獎台頂部（原點排列 + 高度落差）
+function placeTop5OnPodium() {
+  const s = PODIUM_SCALE;
+
+  // 🔧 用同樣命名：以 y 作為橫向（X）間距
+  const y = podiumGap * s;
+
+  const top5Numbers = (race?.getFinalRank?.() ?? []).slice(0, 5);
+  if (top5Numbers.length === 0) return;
+
+  ensurePodium();
+
+  for (let k = 0; k < top5Numbers.length; k++) {
+    const num = top5Numbers[k];
+    const idx = clamp((num | 0) - 1, 0, laneCount - 1);
+    const hObj = horses[idx];
+    if (!hObj?.player) continue;
+
+    const p = hObj.player;
+
+    // 對應台階頂面高度
+    const podiumTopY = (podiumHeights[k] * s);
+
+    // 🔧 橫向（X）展開；Z 固定在 0（賽道中線）
+    const targetX = podiumMidX + (k - 2) * y;
+    const targetY = podiumTopY;
+    const targetZ = 0;
+
+    p.group.position.set(targetX, targetY, targetZ);
+
+    // 面向鏡頭或右方皆可；保留向右
+    p.group.rotation.set(0, Math.PI / 2, 0);
+
+    // 🔧 Idle01 隨機起始幀（利用 speed=1, offset=Math.random()）
+    p.playIdle01(true, 0.15, 1, Math.random());
+  }
+
+  // 隱藏其餘馬匹
+  setOnlyTop5Visible(top5Numbers);
+}
+
+// ★★★ 讓頒獎台上的馬面向鏡頭（或側面）
+function orientTop5ToCamera() {
+  const top5 = (race?.getFinalRank?.() ?? []).slice(0, 5);
+  for (let k = 0; k < top5.length; k++) {
+    const idx = (top5[k] | 0) - 1;
+    const hObj = horses[idx];
+    if (!hObj?.player) continue;
+    const g = hObj.player.group;
+    const dx = camera.position.x - g.position.x;
+    const dz = camera.position.z - g.position.z;
+    g.rotation.y = Math.atan2(dx, dz);
+  }
+}
 
 // ★★★ 馬資源位置（依專案調整）
 const HORSE_ROOT = '../public/horse/';
@@ -257,47 +390,8 @@ function getTop5Labels() {
   return finalRank.slice(0, 5).map(labelOfNumber);
 }
 
-// ===== 頒獎台 =====
-function ensurePodium() {
-  if (podiumGroup) return;
-  podiumGroup = new THREE.Group();
-  scene.add(podiumGroup);
-  for (let k = 0; k < 5; k++) {
-    const height = podiumHeights[k] * PODIUM_SCALE;
-    const box = new THREE.Mesh(
-      new THREE.BoxGeometry(2.4 * PODIUM_SCALE, height, 2.4 * PODIUM_SCALE),
-      new THREE.MeshPhongMaterial({ color: k === 0 ? 0xffd700 : (k === 1 ? 0xc0c0c0 : 0xcd7f32) })
-    );
-    const z = podiumZ + (k - 2) * podiumGap * PODIUM_SCALE;
-    box.position.set(podiumX, height / 2, z);
-    podiumGroup.add(box);
-  }
-}
-
-// 頒獎採用 finalRank 前五（與 UI 一致）
-function placeTop5OnPodium() {
-  ensurePodium();
-  const top5Numbers = (race?.getFinalRank?.() ?? []).slice(0, 5);
-  for (let k = 0; k < top5Numbers.length; k++) {
-    const num = top5Numbers[k];
-    const idx = clamp((num | 0) - 1, 0, laneCount - 1);
-    const hObj = horses[idx];
-    if (!hObj) continue;
-    const p = hObj.player;
-    const height = podiumHeights[k] * PODIUM_SCALE;
-    const z = podiumZ + (k - 2) * podiumGap * PODIUM_SCALE;
-    p.group.position.set(podiumX, height, z);
-    p.playIdle01(true, 0.15);
-  }
-}
-
-// 完賽時程表排序（若其他流程需要以時間回推順序，可保留）
-function buildFinalOrder() {
-  const times = race?.getFinishedTimes?.() ?? [];
-  const idx = [...Array(laneCount).keys()];
-  idx.sort((a, b) => (times[a] ?? Infinity) - (times[b] ?? Infinity));
-  // 回傳/或做其他用途；這裡僅保留對齊舊結構
-  return idx.map(i => horses[i]);
+function getTop5FromFinalRank() {
+  return this.forcedTop5Rank;
 }
 
 // ===== 相機控制（固定視角；Pause 保持當前畫面） =====
@@ -331,9 +425,14 @@ function updateCamera() {
   if (gameState === STATE.Finished) {
     if (race?.isEveryoneFinished?.()) {
       if (!allArrivedShown) {
-        buildFinalOrder();   // 保留：若你其他流程需要
+        // ★★★ 完賽 → 進頒獎：建台 → 佈馬 → 隱藏其他 → 鏡頭拉近
+        const top5Numbers = (race?.getFinalRank?.() ?? []).slice(0, 5);
+        ensurePodium();
         placeTop5OnPodium();
+        setOnlyTop5Visible(top5Numbers);
         moveCameraToAward();
+        orientTop5ToCamera();
+
         ui?.show?.('finished');
         allArrivedShown = true;
         parent?.postMessage?.({
@@ -354,10 +453,21 @@ let allArrivedShown = false;
 // ===== 頒獎鏡頭（透視模式拉近） =====
 function moveCameraToAward() {
   const s = PODIUM_SCALE;
-  const look = new THREE.Vector3(CAM.AWARD.LOOK.x * s, CAM.AWARD.LOOK.y * s, CAM.AWARD.LOOK.z * s);
+
+  // 看向頒獎台中心（賽道中段 X、Z=0），你前面已把頒獎台移到 podiumMidX
+  const look = new THREE.Vector3(podiumMidX, CAM.AWARD.LOOK.y * s, 0);
+
+  // 基準距離（視野幾何）× 縮放（ZOOM）× 自訂距離倍率（DIST_SCALE）
   const baseD = distanceForViewHeight(CAM.VIEW_HEIGHT, CAM.FOV_DEG, CAM.LOOK_AHEAD_MIN);
-  const d = baseD / CAM.AWARD.ZOOM;
-  camera.position.set(look.x - d, CAM.AWARD.POS.y * s, CAM.AWARD.POS.z * s);
+  const r = (baseD / CAM.AWARD.ZOOM) * (CAM.AWARD.DIST_SCALE ?? 1);
+
+  // ★ 用方位角（水平角）決定「繞著 look 的水平位置」
+  // 0度 = 從 -X 看向 look（正面）；90度 = 從 +Z 側面；-90度 = 從 -Z 側面
+  const az = THREE.MathUtils.degToRad(CAM.AWARD.AZIMUTH_DEG ?? 0);
+  const offsetX = -r * Math.cos(az);
+  const offsetZ = r * Math.sin(az);
+
+  camera.position.set(look.x + offsetX, CAM.AWARD.POS.y * s, look.z + offsetZ);
   camera.lookAt(look);
 }
 
@@ -390,7 +500,7 @@ function animate() {
         setHorseRot(it.i, dirRight);
         p.update(dt);
         if (a < 1) allDone = false;
-        else { p.playIdle01(true, 0.1); setHorseRot(it.i, true); }
+        else { p.playIdle01(true, 0.15); setHorseRot(it.i, true); }
       }
       standbyPlan.done = allDone;
     } else {
@@ -406,6 +516,10 @@ function animate() {
 
 // ===== 事件 & Lifecycle =====
 function doStartRace() {
+  // ★★★ 新局前清理：移除頒獎台＋顯示全部馬
+  destroyPodium();
+  showAllHorses();
+
   // 回到起跑點＋面向右
   for (let i = 0; i < laneCount; i++) {
     const hObj = horses[i];
@@ -422,7 +536,7 @@ function doStartRace() {
     }
   }
 
-  // 重置顯示相關狀態
+  // 顯示狀態重置
   allArrivedShown = false;
   leader = null;
 
@@ -527,11 +641,14 @@ function onGameEnd() {
   leader = null;
   allArrivedShown = false;
 
+  // ★ 清理頒獎台，避免殘留
+  destroyPodium();
+
   disposed = true;
   window.removeEventListener('message', onMsg);
   window.removeEventListener('resize', resize);
   countdownOverlay?.remove();
-  editTool.destroy();
+  editTool?.destroy?.();
   ui?.destroy?.();
   if (renderer) { renderer.dispose(); renderer.forceContextLoss?.(); }
 }
