@@ -96,8 +96,8 @@
             </div>
             <div class="ui-row">
                 <label for="particle-size">粒子大小</label>
-                <input type="range" id="particle-size" min="0" max="10" step="1" value="1">
-                <input type="number" id="particle-size-value" min="0" max="10" step="1" value="1">
+                <input type="range" id="particle-size" min="0" max="100" step="1" value="10">
+                <input type="number" id="particle-size-value" min="0" max="100" step="1" value="10">
             </div>
             <div class="ui-row">
                 <label for="particle-opacity">粒子不透明度</label>
@@ -215,7 +215,7 @@
         // 預設 fps
         const DEFAULT_FPS = 30;
         // ★ 預設縮放
-        const DEFAULT_SCALE = 0.05;
+        const DEFAULT_SCALE = 0.5;
 
         // 編號 → 貼圖檔名
         function playerNoToFile(n) {
@@ -713,7 +713,7 @@
             }
             
             // 播放動畫
-            horsePlayerInstance.playRun(true, 0.2, 7);
+            horsePlayerInstance.playRun(true, 0.2, 5);
         }
         
         // 初始載入預設模型
