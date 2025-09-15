@@ -56,7 +56,7 @@ export async function loadHorsesAsync(scene, opts) {
 
   // 進場 Idle
   for (let i = 0; i < laneCount; i++) {
-    horses[i]?.player?.playIdle01(true, 0, 1, Math.random());
+    horses[i]?.player?.playIdle01(true, 0, 0.5, Math.random());
   }
 
   return { horses, minLaneZ, maxLaneZ };
