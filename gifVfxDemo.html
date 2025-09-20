@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js 圖片序列特效 (Billboard 模式)</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    .ui-panel {
+      position: fixed;
+      top: 10px;
+      width: 280px;
+      background-color: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(5px);
+      color: white;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.4);
+      font-size: 14px;
+      user-select: none;
+      z-index: 1000;
+    }
+
+    #ui-panel-left {
+      left: 10px;
+    }
+
+    #ui-panel-right {
+      right: 10px;
+    }
+
+    .ui-section {
+      margin-bottom: 15px;
+    }
+
+    .ui-section h3 {
+      margin: 0 0 10px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+      padding-bottom: 5px;
+    }
+
+    .ui-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .ui-row label {
+      white-space: nowrap;
+      margin-right: 10px;
+    }
+
+    .ui-row input[type="range"] {
+      flex-grow: 1;
+    }
+
+    .ui-row input[type="number"] {
+      width: 50px;
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: white;
+      padding: 3px;
+      border-radius: 3px;
+      text-align: center;
+    }
+
+    .ui-row select {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: white;
+      padding: 3px;
+      border-radius: 3px;
+      flex-grow: 1;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="ui-panel-left" class="ui-panel">
+    <h2>圖片序列動畫參數</h2>
+    <div class="ui-section">
+      <div class="ui-row">
+        <label for="gif-toggle">動畫開關</label>
+        <input type="checkbox" id="gif-toggle" checked>
+      </div>
+      <div class="ui-row">
+        <label for="gif-size">大小</label>
+        <input type="range" id="gif-size" min="0.1" max="10" step="0.1" value="2.5">
+        <input type="number" id="gif-size-value" min="0.1" max="10" step="0.1" value="2.5">
+      </div>
+      <div class="ui-row">
+        <label for="gif-pos-x">X 偏移</label>
+        <input type="range" id="gif-pos-x" min="-5" max="5" step="0.01" value="0.0">
+        <input type="number" id="gif-pos-x-value" min="-5" max="5" step="0.01" value="0.0">
+      </div>
+      <div class="ui-row">
+        <label for="gif-pos-y">Y 偏移</label>
+        <input type="range" id="gif-pos-y" min="-5" max="5" step="0.01" value="1.5">
+        <input type="number" id="gif-pos-y-value" min="-5" max="5" step="0.01" value="1.5">
+      </div>
+      <div class="ui-row">
+        <label for="gif-pos-z">Z 偏移</label>
+        <input type="range" id="gif-pos-z" min="-5" max="5" step="0.01" value="0.0">
+        <input type="number" id="gif-pos-z-value" min="-5" max="5" step="0.01" value="0.0">
+      </div>
+      <div class="ui-row">
+        <label for="gif-rotation-y">畫面旋轉</label>
+        <input type="range" id="gif-rotation-y" min="0" max="360" step="1" value="0">
+        <input type="number" id="gif-rotation-y-value" min="0" max="360" step="1" value="0">
+      </div>
+      <div class="ui-row">
+        <label for="animation-speed">動畫速度 (fps)</label>
+        <input type="range" id="animation-speed" min="1" max="60" step="1" value="15">
+        <input type="number" id="animation-speed-value" min="1" max="60" step="1" value="15">
+      </div>
+    </div>
+  </div>
+
+  <div id="ui-panel-right" class="ui-panel" style="display: none;">
+  </div>
+
+  <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+            }
+        }
+    </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { BillboardSequenceEffect } from './game/BillboardSequenceEffect.js';
+
+    // === 動畫分段（幀） ===
+    const HORSE_RANGES = {
+      Walk: { from: 0, to: 159 },
+      Run: { from: 241, to: 302 },
+      SpeedRun: { from: 304, to: 362 },
+      Idle01: { from: 365, to: 409 },
+      Idle02: { from: 410, to: 440 },
+    };
+
+    // === 已分段 clips 的常見命名 ===
+    const CLIP_ALIASES = {
+      Walk: ["Horse_Walk", "Walk", "walk"],
+      Run: ["Horse_Run", "Run", "run", "Gallop"],
+      SpeedRun: ["Horse_SpeedRun", "SpeedRun", "speedrun", "Sprint", "SprintRun"],
+      Idle01: ["Horse_Idle01", "Idle01", "idle01", "Idle", "idle"],
+      Idle02: ["Horse_Idle02", "idle02", "Idle_2", "idle_2"],
+    };
+
+    // 預設 fps
+    const DEFAULT_FPS = 30;
+    // 預設縮放
+    const DEFAULT_SCALE = 0.5;
+
+    // 編號 → 貼圖檔名
+    function playerNoToFile(n) {
+      const c = Math.min(11, Math.max(1, (n | 0)));
+      return `horse_${String(c).padStart(3, "0")}.png`;
+    }
+
+    class HorsePlayer {
+      /**
+       * @param {THREE.Scene} scene
+       * @param {string} rootUrl - glTF 所在資料夾（public 路徑），預設 "/horse/"
+       * @param {string} gltfFilename - 例如 "result.gltf"
+       * @param {number} playerNo - 1~11
+       * @param {object} [options]
+       * @param {string} [options.textureFolder] - 貼圖資料夾（預設 rootUrl）
+       * @param {number} [options.fps=30] - 以幀定義子動畫時使用的 fps
+       * @param {THREE.Vector3} [options.position]
+       * @param {THREE.Euler} [options.rotation]
+       * @param {number} [options.scale=0.1]
+       * @param {boolean} [options.castShadow=false]
+       * @param {boolean} [options.receiveShadow=false]
+       */
+      constructor(scene, rootUrl, gltfFilename, playerNo, options = {}) {
+        if (!scene) throw new Error("HorsePlayer 需要 THREE.Scene");
+        this.scene = scene;
+
+        this.rootUrl = rootUrl ?? "/horse/";
+        this.gltfFilename = gltfFilename ?? "result.gltf";
+        this.textureFolder = options.textureFolder ?? this.rootUrl;
+
+        this.fps = options.fps ?? DEFAULT_FPS;
+
+        this.group = new THREE.Group();
+        this.group.name = `HorsePlayer_${playerNo}`;
+        this.scene.add(this.group);
+
+        const scale = DEFAULT_SCALE;
+        this.group.scale.setScalar(scale);
+        if (options.position) this.group.position.copy(options.position);
+        if (options.rotation) this.group.rotation.copy(options.rotation);
+
+        this._castShadow = !!options.castShadow;
+        this._receiveShadow = !!options.receiveShadow;
+
+        this.playerNo = this._clampPlayerNo(playerNo);
+        this.mixer = null;
+        this.model = null;
+        this._baseClip = null;
+        this._actions = {};
+        this._current = null;
+
+        this._timeScale = 1;
+
+        this._isLoaded = false;
+      }
+
+      get isLoaded() { return this._isLoaded; }
+
+      async loadAsync() {
+        const loader = new GLTFLoader().setPath(this.rootUrl);
+        const gltf = await loader.loadAsync(this.gltfFilename);
+
+        this.model = gltf.scene || gltf.scenes?.[0];
+        this.group.add(this.model);
+
+        this.model.traverse(obj => {
+          if (obj.isMesh) {
+            obj.castShadow = this._castShadow;
+            obj.receiveShadow = this._receiveShadow;
+            if (obj.material) {
+              const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+              for (const m of mats) {
+                if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
+                m.needsUpdate = true;
+              }
+            }
+          }
+        });
+
+        await this._applyPlayerTexture(this.playerNo);
+
+        const clips = gltf.animations || [];
+        this.mixer = new THREE.AnimationMixer(this.model);
+
+        const didBindNamedClips = this._bindActionsFromNamedClips(clips);
+
+        if (!didBindNamedClips) {
+          this._baseClip = this._pickBaseClip(clips);
+          if (!this._baseClip) {
+            console.warn("[HorsePlayer] 找不到可用的動畫 clip。");
+          } else {
+            this._makeSubclipsFromBase();
+          }
+        }
+
+        this.setSpeed(1);
+
+        this._isLoaded = true;
+        return this;
+      }
+
+      playWalk(loop = true, fade = 0.2, speed = 1) { return this._play("Walk", loop, fade, speed, this.randomStartAt()); }
+      playRun(loop = true, fade = 0.2, speed = 1) { return this._play("Run", loop, fade, speed, this.randomStartAt()); }
+      playSpeedRun(loop = true, fade = 0.2, speed = 1) { return this._play("SpeedRun", loop, fade, speed, this.randomStartAt()); }
+      playIdle01(loop = true, fade = 0.2, speed = 1) { return this._play("Idle01", loop, fade, speed, this.randomStartAt()); }
+      playIdle02(loop = true, fade = 0.2, speed = 1) { return this._play("Idle02", loop, fade, speed, this.randomStartAt()); }
+
+      randomStartAt() { return Math.round(Math.random() * 100) / 100; }
+
+      stop() {
+        if (this._current) {
+          this._current.stop();
+          this._current = null;
+        }
+      }
+
+      update(deltaSeconds) {
+        if (this.mixer) this.mixer.update(deltaSeconds);
+      }
+
+      setSpeed(timeScale = 1) {
+        this._timeScale = Math.max(0.01, Number(timeScale));
+        if (this.mixer) this.mixer.timeScale = this._timeScale;
+        if (this._current) {
+          const user = this._current.userSpeed ?? 1;
+          this._current.timeScale = user;
+        }
+      }
+
+      async setPlayerNo(n) {
+        this.playerNo = this._clampPlayerNo(n);
+        await this._applyPlayerTexture(this.playerNo);
+      }
+
+      dispose() {
+        if (this._current) this._current.stop();
+
+        if (this.mixer) {
+          for (const action of Object.values(this._actions)) {
+            const clip = action?.getClip?.();
+            if (clip) this.mixer.uncacheAction(clip, this.model);
+          }
+          this.mixer.uncacheRoot(this.model);
+        }
+
+        this._actions = {};
+        this._current = null;
+        this._baseClip = null;
+
+        if (this.group) {
+          this.scene.remove(this.group);
+          this.group.traverse(obj => {
+            if (obj.isMesh) {
+              obj.geometry?.dispose?.();
+              const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+              for (const m of mats) this._disposeMaterial(m);
+            }
+          });
+          this.group.clear();
+        }
+
+        this.mixer = null;
+        this.model = null;
+      }
+
+      _disposeMaterial(mat) {
+        if (!mat) return;
+        for (const key of ["map", "normalMap", "roughnessMap", "metalnessMap", "aoMap", "emissiveMap", "alphaMap"]) {
+          if (mat[key]?.dispose) mat[key].dispose();
+        }
+        mat.dispose?.();
+      }
+
+      _clampPlayerNo(n) {
+        n = Number(n | 0);
+        if (n < 1) n = 1;
+        if (n > 11) n = 11;
+        return n;
+      }
+
+      async _applyPlayerTexture(playerNo) {
+        if (!this.model) {
+          console.warn("[HorsePlayer] 模型尚未載入，無法套用貼圖。");
+          return;
+        }
+        const file = playerNoToFile(playerNo);
+        const url = this._join(this.textureFolder, file);
+
+        console.log(`[HorsePlayer] 載入貼圖：${url}`);
+
+        const tex = await new Promise((resolve, reject) => {
+          new THREE.TextureLoader().load(
+            url,
+            t => {
+              t.colorSpace = THREE.SRGBColorSpace;
+              t.flipY = false;
+              resolve(t);
+            },
+            undefined,
+            reject
+          );
+        });
+
+        this.model.traverse(obj => {
+          if (!obj.isMesh) return;
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          for (const m of mats) this._applyMapToMaterial(m, tex);
+        });
+      }
+
+      _applyMapToMaterial(mat, tex) {
+        if (!mat) return;
+        mat.map = tex;
+        if (mat.map) {
+          mat.map.flipY = false;
+          mat.map.colorSpace = THREE.SRGBColorSpace;
+        }
+        mat.needsUpdate = true;
+      }
+
+      _join(folder, file) {
+        return folder.endsWith("/") ? folder + file : folder + "/" + file;
+      }
+
+      _pickBaseClip(clips) {
+        if (!clips || clips.length === 0) return null;
+        const c1 = clips.find(c => (c.name || "").toLowerCase().includes("horse"));
+        if (c1) return c1;
+        let best = clips[0];
+        let bestDur = best.duration;
+        for (let i = 1; i < clips.length; i++) {
+          if (clips[i].duration > bestDur) {
+            best = clips[i]; bestDur = clips[i].duration;
+          }
+        }
+        return best;
+      }
+
+      _bindActionsFromNamedClips(clips) {
+        if (!clips || clips.length === 0) return false;
+
+        let bound = 0;
+        this._actions = {};
+
+        const byName = new Map();
+        for (const c of clips) byName.set(c.name, c);
+
+        const tryFind = (candidates) => {
+          for (const n of candidates) {
+            if (byName.has(n)) return byName.get(n);
+          }
+          for (const [k, v] of byName) {
+            if (candidates.some(w => w.toLowerCase() === (k || "").toLowerCase())) return v;
+          }
+          return null;
+        };
+
+        for (const [logicalName, aliases] of Object.entries(CLIP_ALIASES)) {
+          const clip = tryFind(aliases);
+          if (clip) {
+            const action = this.mixer.clipAction(clip);
+            action.enabled = true;
+            action.clampWhenFinished = true;
+            action.loop = THREE.LoopRepeat;
+            action.userSpeed = 1;
+            this._actions[logicalName] = action;
+            bound++;
+          }
+        }
+
+        return bound >= 3;
+      }
+
+      _makeSubclipsFromBase() {
+        if (!this._baseClip) return;
+        this._actions = {};
+
+        for (const [name, range] of Object.entries(HORSE_RANGES)) {
+          const sub = THREE.AnimationUtils.subclip(this._baseClip, name, range.from, range.to, this.fps);
+          const action = selfOr(this.mixer.clipAction(sub));
+
+          function selfOr(a) { a.userSpeed = 1; return a; }
+          action.enabled = true;
+          action.clampWhenFinished = true;
+          action.loop = THREE.LoopRepeat;
+          this._actions[name] = action;
+        }
+      }
+
+      _play(name, loop = true, fadeSeconds = 0.2, speed = 1, startAt = 0) {
+        const next = this._actions[name];
+        if (!next) {
+          console.warn(`[HorsePlayer] 播放失敗：沒有名為 ${name} 的動作。`);
+          return;
+        }
+
+        const userSpeed = Math.max(0.01, Number(speed) || 1);
+        next.enabled = true;
+        next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+        next.clampWhenFinished = !loop;
+        next.userSpeed = userSpeed;
+        next.timeScale = userSpeed;
+
+        const clip = next.getClip?.() || next._clip;
+        const dur = Math.max(0, clip?.duration ?? 0);
+        const p = Math.min(1, Math.max(0, Number(startAt) || 0));
+        const startTime = dur > 0 ? (p >= 1 ? (loop ? 0 : dur) : (dur * p)) : 0;
+
+        next.reset();
+        if (dur > 0) {
+          next.time = loop ? (startTime % dur) : Math.min(startTime, dur);
+        }
+
+        if (this._current && this._current !== next) {
+          next.play();
+          this._current.crossFadeTo(next, Math.max(0, fadeSeconds), false);
+        } else {
+          next.play();
+        }
+
+        this._current = next;
+        return next;
+      }
+    }
+
+
+    // 建立場景 (Scene)
+    const scene = new THREE.Scene();
+
+    // 建立相機 (Camera)
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 20, 80);
+
+    // 建立渲染器 (Renderer)
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+
+    // 建立燈光
+    const ambientLight = new THREE.AmbientLight(0xffffff, 3);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 3);
+    dirLight.position.set(5, 5, 5);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 1024;
+    dirLight.shadow.mapSize.height = 1024;
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 50;
+    scene.add(dirLight);
+
+    // 載入 Skybox
+    const cubeTextureLoader = new THREE.CubeTextureLoader();
+    cubeTextureLoader.setPath('public/skybox/');
+    const skyboxTexture = cubeTextureLoader.load([
+      'yonder_rt.jpg',
+      'yonder_lf.jpg',
+      'yonder_up.jpg',
+      'yonder_dn.jpg',
+      'yonder_ft.jpg',
+      'yonder_bk.jpg'
+    ]);
+    scene.background = skyboxTexture;
+    scene.environment = skyboxTexture;
+
+    // 建立軌道控制器 (OrbitControls)
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 1, 0);
+    controls.update();
+
+    let horsePlayerInstance = null;
+    let billboardEffect = null;
+    const clock = new THREE.Clock();
+    const fovSprint = 90;
+    let targetFOV = fovSprint;
+
+    const HORSE_ROOT = 'public/horse/';
+    const HORSE_GLTF = 'result.gltf';
+
+    async function loadModel() {
+      if (horsePlayerInstance) {
+        horsePlayerInstance.dispose();
+        horsePlayerInstance = null;
+      }
+
+      const playerNo = 1;
+      const gltfPath = HORSE_ROOT;
+      const texturePath = HORSE_ROOT + 'tex/';
+      const scale = DEFAULT_SCALE;
+      horsePlayerInstance = new HorsePlayer(scene, gltfPath, HORSE_GLTF, playerNo, { textureFolder: texturePath, scale: scale });
+
+      await horsePlayerInstance.loadAsync();
+
+      horsePlayerInstance.playRun(true, 0.2, 5);
+      
+      // 在模型載入完成後初始化 BillboardSequenceEffect
+      billboardEffect = new BillboardSequenceEffect(horsePlayerInstance);
+    }
+
+
+    // 簡單的地板
+    const planeGeometry = new THREE.PlaneGeometry(50, 50);
+    const planeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888 });
+    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+    plane.rotation.x = -Math.PI / 2;
+    plane.receiveShadow = true;
+    scene.add(plane);
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+
+      if (horsePlayerInstance) {
+        horsePlayerInstance.update(delta);
+      }
+
+      // 使用新的 BillboardSequenceEffect
+      if (billboardEffect && billboardEffect._ready) {
+        billboardEffect.update(delta, camera);
+      }
+
+      camera.fov += (targetFOV - camera.fov) * 0.05;
+      camera.updateProjectionMatrix();
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // --- UI 控制邏輯 ---
+    function setupUI() {
+      const uiElements = [
+        { id: 'gif-size', prop: 'scale', type: 'float' },
+        { id: 'gif-pos-x', prop: 'x', type: 'float' },
+        { id: 'gif-pos-y', prop: 'y', type: 'float' },
+        { id: 'gif-pos-z', prop: 'z', type: 'float' },
+        { id: 'gif-rotation-y', prop: 'rotationInScreenDeg', type: 'float' },
+      ];
+
+      uiElements.forEach(item => {
+        const rangeInput = document.getElementById(item.id);
+        const numberInput = document.getElementById(`${item.id}-value`);
+
+        if (rangeInput && numberInput) {
+          const updateValue = (value) => {
+            let parsedValue = item.type === 'int' ? parseInt(value) : parseFloat(value);
+            
+            if (billboardEffect) {
+              if (item.id.includes('pos')) {
+                billboardEffect.setOffset(
+                  item.prop === 'x' ? parsedValue : billboardEffect.offset.x,
+                  item.prop === 'y' ? parsedValue : billboardEffect.offset.y,
+                  item.prop === 'z' ? parsedValue : billboardEffect.offset.z
+                );
+              } else if (item.id === 'gif-size') {
+                billboardEffect.setScale(parsedValue);
+              } else if (item.id === 'gif-rotation-y') {
+                billboardEffect.setRotationInScreenDeg(parsedValue);
+              }
+            }
+
+            if (rangeInput.step.includes('.')) {
+              numberInput.value = parsedValue.toFixed(2);
+            } else {
+              numberInput.value = Math.round(parsedValue);
+            }
+          };
+
+          rangeInput.addEventListener('input', (e) => {
+            updateValue(e.target.value);
+          });
+
+          numberInput.addEventListener('input', (e) => {
+            let value = parseInt(e.target.value);
+            if (isNaN(value)) value = parseFloat(rangeInput.min);
+            value = Math.max(parseFloat(rangeInput.min), Math.min(parseFloat(rangeInput.max), value));
+            rangeInput.value = value;
+            updateValue(value);
+          });
+        }
+      });
+
+      // 動畫開關邏輯
+      const gifToggle = document.getElementById('gif-toggle');
+      if (gifToggle) {
+        gifToggle.addEventListener('change', (e) => {
+          if (billboardEffect) {
+            billboardEffect.setVisible(e.target.checked);
+          }
+        });
+      }
+
+      // 動畫速度控制
+      const animationSpeedRange = document.getElementById('animation-speed');
+      const animationSpeedValue = document.getElementById('animation-speed-value');
+      if (animationSpeedRange && animationSpeedValue) {
+        const updateSpeed = (value) => {
+          const parsedValue = parseInt(value);
+          if (billboardEffect) {
+            billboardEffect.setFPS(parsedValue);
+          }
+          animationSpeedValue.value = parsedValue;
+          animationSpeedRange.value = parsedValue;
+        };
+        animationSpeedRange.addEventListener('input', (e) => {
+          updateSpeed(e.target.value);
+        });
+        animationSpeedValue.addEventListener('input', (e) => {
+          let value = parseInt(e.target.value);
+          if (isNaN(value)) value = parseFloat(animationSpeedRange.min);
+          value = Math.max(parseFloat(animationSpeedRange.min), Math.min(parseFloat(animationSpeedRange.max), value));
+          updateSpeed(value);
+        });
+        // 確保初始值同步
+        updateSpeed(animationSpeedRange.value);
+      }
+    }
+
+    // 在所有模型和圖片序列載入後再設置 UI
+    loadModel().then(() => {
+      const checkReady = setInterval(() => {
+        if (billboardEffect && billboardEffect._ready) {
+          clearInterval(checkReady);
+          setupUI();
+        }
+      }, 100);
+    });
+
+    /**
+ * 遞迴地列印 Three.js 場景的階層結構
+ * @param {THREE.Object3D} object - 要開始遍歷的物件（通常是 scene）
+ * @param {string} indent - 縮排字串，用於視覺化父子關係
+ */
+    function logHierarchy(object, indent = '') {
+      // 輸出當前物件的名稱和類型
+      console.log(`${indent}${object.name || object.type} (${object.type})`);
+
+      // 如果物件有子物件，遞迴呼叫此函式
+      if (object.children && object.children.length > 0) {
+        object.children.forEach(child => {
+          logHierarchy(child, indent + '  ');
+        });
+      }
+    }
+
+    // 範例：在你的 animate 函式或載入模型後呼叫
+    // 假設你的場景變數是 scene
+    // 在 loadModel() 函式結束後呼叫：
+    // logHierarchy(scene);
+
+    animate();
+  </script>
+</body>
+
+</html>

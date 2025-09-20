@@ -44,7 +44,7 @@ let gameState = STATE.Ready;
 let renderer, scene, camera, clock;
 let horses = []; // { player: HorsePlayer, startPos: THREE.Vector3, laneZ:number, faceRight:boolean }
 const laneCount = 11;
-const trackLength = 10;
+const trackLength = 1000;
 const startLineX = -trackLength / 2;
 const finishLineX = trackLength / 2;
 const finishDetectX = finishLineX - 0.5; // 衝線判定（略早一點）
