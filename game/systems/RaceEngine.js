@@ -1,27 +1,27 @@
 // 系統：賽跑邏輯引擎（抽離版）— 控制馬匹速度/名次收斂/完賽判定/SlowMo/Lock/Sprint/Rhythm
 // 變更摘要：
-// - 在 SlowMo 觸發當幀，為每匹馬建立速度快照 slowmoSnapshotV[]；
-// - 第一匹越線當幀關閉 SlowMo，進入 postSlowMoFrozen 鎖速模式；
-// - 在鎖速模式下直到 everyoneFinished() 之前：未完賽馬用快照速度推進，已完賽馬維持現速；
-// - 不再在鎖速狀態內套用 rhythm / sprint / lock 名次回授等速度演算。
+// - 捨棄 postFinishStage，引入 postFinishSpeedUp 模式，專門處理完賽後加速。
+// - 在 postFinishSpeedUp 模式下，馬匹速度從 SlowMo 速度平滑加速回正常速度。
+// - 在此模式下，維持名次回授邏輯，以防止超車，確保名次不變。
+// - 重新整理 tick() 函數，使邏輯更清晰。
 
 import * as THREE from 'https://unpkg.com/three@0.165.0/build/three.module.js';
 
 export class RaceEngine {
   /**
    * @param {{ laneCount:number, startLineX:number, finishLineX:number, finishDetectX:number,
-   *           noise:(t:number,i:number)=>number, randFloat:(a:number,b:number)=>number, clamp:(v,a,b)=>number, lerp:(a,b,t)=>number,
-   *           log?:Function }} cfg
+   * noise:(t:number,i:number)=>number, randFloat:(a:number,b:number)=>number, clamp:(v,a,b)=>number, lerp:(a,b,t)=>number,
+   * log?:Function }} cfg
    */
   constructor(cfg) {
     this.cfg = cfg;
     this.log = cfg.log || (()=>{});
 
     // ===== 參數（沿用既有） =====
-    this.SLOWMO = { enabled: true, triggerPct: 0.90, rate: 0.3, active: false, triggeredAt: null };
+    this.SLOWMO = { enabled: true, triggerPct: 0.97, rate: 0.3, active: false, triggeredAt: null };
     this.LOCK_STAGE = { None:'None', PreLock:'PreLock', LockStrong:'LockStrong', FinishGuard:'FinishGuard' };
     this.LOCK = {
-      preTriggerPct: 0.70, triggerPct: 0.75, releasePct: 0.72,
+      preTriggerPct: 0.80, triggerPct: 0.85, releasePct: 0.72,
       minGapBase: 0.60, minGapMax: 1.20, gapWidenFrom: 0.90, gapWidenTo: 1.00,
       gain: {
         Pre:    { boost:0.20, brake:0.15, pos:0.020, forcedBoost:0.60, forcedBrake:0.80 },
@@ -30,7 +30,7 @@ export class RaceEngine {
       },
       noSpeedLimitInStrong: true,
     };
-    this.SPEED_CONF = { vMin:60, vMax:180, blend:0.10, noiseScaleStart:1.0, noiseScaleSetup:0.4, noiseScaleLock:0.2 };
+    this.SPEED_CONF = { vMin:100, vMax:150, blend:0.10, noiseScaleStart:1.0, noiseScaleSetup:0.4, noiseScaleLock:0.2 };
     this.PHASE_SPLITS = { start:0.60, setup:0.85, lock:0.97 };
     this.RHYTHM_CONF = {
       segment:{ durMin:0.9, durMax:1.4, multMin:0.20, multMax:3.0, easeSec:0.25 },
@@ -60,9 +60,10 @@ export class RaceEngine {
 
     this._flags = { firstHorseFinished:false };
 
-    // ===== 新增：SlowMo 速度快照 / 鎖速模式 =====
-    this.slowmoSnapshotV = [];   // 在 SlowMo 觸發當幀記錄各馬的速度
-    this.postSlowMoFrozen = false; // 第一匹越線後，直到 everyoneFinished 前的鎖速旗標
+    // ===== 新增：SlowMo 速度快照 / 完賽後加速模式 =====
+    this.slowmoSnapshotV = [];     // 在 SlowMo 觸發當幀記錄各馬的速度
+    this.postFinishSpeedUp = false;  // 第一匹越線後，專門處理加速的模式旗標
+    this.speedUpStartTime = null;    // 紀錄加速開始的時間
   }
 
   // ====== 初始化馬匹陣列、基準速度 ======
@@ -76,9 +77,10 @@ export class RaceEngine {
     this.finishedTimes   = Array(N).fill(null);
     this.finalRank.length = 0;
 
-    // 也重置快照/鎖速
+    // 重置快照/模式
     this.slowmoSnapshotV = Array(N).fill(null);
-    this.postSlowMoFrozen = false;
+    this.postFinishSpeedUp = false;
+    this.speedUpStartTime = null;
   }
 
   // ====== 回合開始 ======
@@ -110,7 +112,8 @@ export class RaceEngine {
 
     // 旗標/快照重置
     this._flags.firstHorseFinished = false;
-    this.postSlowMoFrozen = false;
+    this.postFinishSpeedUp = false;
+    this.speedUpStartTime = null;
     this.slowmoSnapshotV = Array(N).fill(null);
   }
 
@@ -121,42 +124,47 @@ export class RaceEngine {
    * @returns {{firstHorseJustFinished:boolean, everyoneFinished:boolean}}
    */
   tick(dt, t) {
-    // 觸發 SlowMo（與 Lock 解耦）
-    if (this.SLOWMO.enabled && !this.SLOWMO.active) {
-      const pct = this._getLeaderProgress();
-      if (pct >= this.SLOWMO.triggerPct) {
-        this.SLOWMO.active = true;
-        this.SLOWMO.triggeredAt = t;
-        //this.log?.(`[SlowMo] triggered at ${Math.round(pct*100)}% (rate=${this.SLOWMO.rate})`);
+    const elapsed = this._nowSinceStart(t);
 
-        // ★ 新增：建立 SlowMo 當幀「速度快照」
-        const N = this.cfg.laneCount;
-        for (let i=0;i<N;i++){
-          const vi = Number.isFinite(this.speedState.v[i]) ? this.speedState.v[i] : this.baseSpeeds[i];
-          this.slowmoSnapshotV[i] = this.cfg.clamp(vi, this.SPEED_CONF.vMin, this.SPEED_CONF.vMax);
+    // 在 postFinishSpeedUp 模式下，直接以正常時間推進
+    let dtScale = 1;
+    if (!this.postFinishSpeedUp) {
+      // 觸發 SlowMo（與 Lock 解耦）
+      if (this.SLOWMO.enabled && !this.SLOWMO.active) {
+        const pct = this._getLeaderProgress();
+        if (pct >= this.SLOWMO.triggerPct) {
+          this.SLOWMO.active = true;
+          this.SLOWMO.triggeredAt = t;
+          // 建立 SlowMo 當幀「速度快照」
+          const N = this.cfg.laneCount;
+          for (let i=0;i<N;i++){
+            const vi = Number.isFinite(this.speedState.v[i]) ? this.speedState.v[i] : this.baseSpeeds[i];
+            this.slowmoSnapshotV[i] = this.cfg.clamp(vi, this.SPEED_CONF.vMin, this.SPEED_CONF.vMax);
+          }
         }
       }
+      dtScale = (this.SLOWMO.active ? this.SLOWMO.rate : 1);
     }
-    const dtScale = (this.SLOWMO.active ? this.SLOWMO.rate : 1);
-
+    
     // Lock 階段更新
     this._updateLockStage();
 
-    const elapsed = this._nowSinceStart(t);
+    // 判斷是否在完賽後加速階段
+    const isPostFinish = this.postFinishSpeedUp;
 
-    // 鎖速模式下：停止一切主動速度演算（但仍更新 Sprint 狀態時鐘以免殘留）
-    if (!this.postSlowMoFrozen) {
+    // 停止新的衝刺和節奏計算
+    if (!isPostFinish) {
       this._tryTriggerSprint(elapsed);
     }
     this._updateSprintLifecycle(elapsed);
 
     // Setup：產生完賽時程表（含前五）
-    if (!this.postSlowMoFrozen && this._inPhase('setup', elapsed)) {
+    if (!isPostFinish && this._inPhase('setup', elapsed)) {
       this._buildFinishScheduleIfNeeded(t);
     }
 
     // 排序資訊（當前與期望）
-    const isLocking = (!this.postSlowMoFrozen) && this._inAnyLock();
+    const isLocking = (!isPostFinish) && this._inAnyLock();
     const stageGain = (this.lockStage === this.LOCK_STAGE.PreLock) ? this.LOCK.gain.Pre
       : (this.lockStage === this.LOCK_STAGE.LockStrong) ? this.LOCK.gain.Strong
       : (this.lockStage === this.LOCK_STAGE.FinishGuard) ? this.LOCK.gain.Guard
@@ -166,10 +174,11 @@ export class RaceEngine {
     const currRankMap = {};
     for (let r=0;r<currOrder.length;r++) currRankMap[currOrder[r]] = r+1;
 
-    const desiredOrder = (this.forcedTop5Rank && isLocking) ? this._computeDesiredOrder() : currOrder.slice();
+    // postFinishSpeedUp 階段，強制啟動 lock 以維持名次
+    const desiredOrder = (this.forcedTop5Rank && (isLocking || isPostFinish)) ? this._computeDesiredOrder() : currOrder.slice();
     const desiredRankMap = {};
     for (let r=0;r<desiredOrder.length;r++) desiredRankMap[desiredOrder[r]] = r+1;
-    const xTarget = (isLocking) ? this._computeShadowTargets(desiredOrder) : null;
+    const xTarget = (isLocking || isPostFinish) ? this._computeShadowTargets(desiredOrder) : null;
 
     // 計算速度
     const N = this.cfg.laneCount;
@@ -184,78 +193,88 @@ export class RaceEngine {
         continue;
       }
 
-      // ★ 鎖速模式：未完賽者用 SlowMo 快照速度，完全不跑任何速度演算
-      if (this.postSlowMoFrozen) {
-        const vFrozen = Number.isFinite(this.slowmoSnapshotV[i]) ? this.slowmoSnapshotV[i] : (Number.isFinite(this.speedState.v[i]) ? this.speedState.v[i] : this.baseSpeeds[i]);
-        nextV[i] = this.cfg.clamp(vFrozen, this.SPEED_CONF.vMin, this.SPEED_CONF.vMax);
+      // ★ 核心新邏輯：進入完賽後加速模式
+      if (isPostFinish) {
+        // 從 SlowMo 速度平滑加速回正常速度
+        const slowmoV = this.slowmoSnapshotV[i] || this.speedState.v[i];
+        const normalV = this.baseSpeeds[i];
+        const tElapsed = t - this.speedUpStartTime;
+        const speedUpDur = 2.0; // 加速回正常速度的時間，可調整
+        const tNorm = this.cfg.clamp(tElapsed / speedUpDur, 0, 1);
+        
+        let vStar = this.cfg.lerp(slowmoV, normalV, tNorm);
+        
+        // 繼續應用名次回授來維持名次
+        if (this.forcedTop5Rank) {
+           const stageGainGuard = this.LOCK.gain.Guard;
+           const factor = this._lockSpeedFactorFor(i, stageGainGuard, desiredRankMap, currRankMap, xTarget);
+           vStar *= factor;
+        }
 
-        // 視覺噪聲（可留）：保持 y 微抖動
-        p.group.position.y = Math.max(0, Math.abs(this.cfg.noise(t, i)) * 0.2 * this.SPEED_CONF.noiseScaleLock);
-        continue;
-      }
-
-      // —— 以下為正常演算（非鎖速模式）——
-
-      // 噪聲權重
-      const noiseScale = isLocking ? this.SPEED_CONF.noiseScaleLock
-        : this._inPhase('setup', elapsed) ? this.SPEED_CONF.noiseScaleSetup
-        : this.SPEED_CONF.noiseScaleStart;
-
-      // v*：Setup 後用 剩距/剩時；否則用 base
-      let vStar;
-      if (this.RACE.setupDone && this.finishSchedule.T[i] != null) {
-        const x = p.group.position.x;
-        const d = Math.max(0, this.cfg.finishLineX - x);
-        const tau = Math.max(0.01, this.finishSchedule.T[i] - t);
-        vStar = d / tau;
+        vStar = this.cfg.clamp(vStar, this.SPEED_CONF.vMin, this.SPEED_CONF.vMax);
+        nextV[i] = vStar;
+        
       } else {
-        vStar = this.baseSpeeds[i];
-      }
+        // 正常速度演算
+        
+        // 噪聲權重
+        const noiseScale = isLocking ? this.SPEED_CONF.noiseScaleLock
+          : this._inPhase('setup', elapsed) ? this.SPEED_CONF.noiseScaleSetup
+          : this.SPEED_CONF.noiseScaleStart;
 
-      // 節奏倍率
-      const m = this._updateRhythm(i, elapsed);
-      vStar *= m;
-
-      // Lock 名次回授（含 forcedTop5）
-      if (this.forcedTop5Rank && isLocking && stageGain) {
-        const factor = this._lockSpeedFactorFor(i, stageGain, desiredRankMap, currRankMap, xTarget);
-        vStar *= factor;
-      } else {
+        // v*：Setup 後用 剩距/剩時；否則用 base
+        let vStar;
+        if (this.RACE.setupDone && this.finishSchedule.T[i] != null) {
+          const x = p.group.position.x;
+          const d = Math.max(0, this.cfg.finishLineX - x);
+          const tau = Math.max(0.01, this.finishSchedule.T[i] - t);
+          vStar = d / tau;
+        } else {
+          vStar = this.baseSpeeds[i];
+        }
+        
+        // 節奏倍率
+        const m = this._updateRhythm(i, elapsed);
+        vStar *= m;
+        
         // 非 Lock：中段/Setup 的 Sprint
         if (this._isMidOrSetup(elapsed) && this._isSprinting(i)) {
           const mult = this._rand(this.SPRINT.multMin, this.SPRINT.multMax);
           vStar *= mult;
         }
+        
+        // Lock 名次回授（含 forcedTop5）
+        if (this.forcedTop5Rank && isLocking && stageGain) {
+          const factor = this._lockSpeedFactorFor(i, stageGain, desiredRankMap, currRankMap, xTarget);
+          vStar *= factor;
+        }
+        
+        // 夾限：LockStrong 可取消上限
+        if (this.lockStage === this.LOCK_STAGE.LockStrong && this.LOCK.noSpeedLimitInStrong) {
+          vStar = Math.max(this.SPEED_CONF.vMin, vStar);
+        } else {
+          vStar = this.cfg.clamp(vStar, this.SPEED_CONF.vMin, this.SPEED_CONF.vMax);
+        }
+        
+        // 平滑靠攏
+        const vPrev = Number.isFinite(this.speedState.v[i]) ? this.speedState.v[i] : this.baseSpeeds[i];
+        const vNow = vPrev + (vStar - vPrev) * this.SPEED_CONF.blend;
+        nextV[i] = vNow;
+        
+        // Y 視覺噪聲
+        p.group.position.y = Math.max(0, Math.abs(this.cfg.noise(t, i)) * 0.2 * noiseScale);
       }
-
-      // 夾限：LockStrong 可取消上限
-      if (this.lockStage === this.LOCK_STAGE.LockStrong && this.LOCK.noSpeedLimitInStrong) {
-        vStar = Math.max(this.SPEED_CONF.vMin, vStar);
-      } else {
-        vStar = this.cfg.clamp(vStar, this.SPEED_CONF.vMin, this.SPEED_CONF.vMax);
-      }
-
-      // 平滑靠攏
-      const vPrev = Number.isFinite(this.speedState.v[i]) ? this.speedState.v[i] : this.baseSpeeds[i];
-      const vNow = vPrev + (vStar - vPrev) * this.SPEED_CONF.blend;
-      nextV[i] = vNow;
-
-      // Y 視覺噪聲
-      p.group.position.y = Math.max(0, Math.abs(this.cfg.noise(t, i)) * 0.2 * noiseScale);
     }
 
-    // 鎖速模式下不再執行安全間距或名次微調；若你想保留，可在此以極小係數處理
-    if (isLocking) this._applySoftSeparation(currOrder, nextV, desiredRankMap);
+    if (isLocking || isPostFinish) this._applySoftSeparation(currOrder, nextV, desiredRankMap);
 
     // 套用速度、推進、動畫、越線判定
     let firstJustFinished = false;
     for (let i=0;i<N;i++){
       const p = this._getHorse(i); if (!p) continue;
       this.speedState.v[i] = nextV[i];
-
-      // SlowMo 時間縮放只在 SLOWMO.active 為真時套用
-      p.group.position.x += nextV[i] * dt * (this.SLOWMO.active ? this.SLOWMO.rate : 1);
-      p.update(dt * (this.SLOWMO.active ? this.SLOWMO.rate : 1));
+      p.group.position.x += nextV[i] * dt * dtScale;
+      p.update(dt * dtScale);
 
       if (this.finishedTimes[i] == null && p.group.position.x >= this.cfg.finishDetectX) {
         this._stampFinish(i, t);
@@ -269,22 +288,17 @@ export class RaceEngine {
       if (newL && newL !== this.leader) this.leader = newL;
     }
 
-    // ★ 第一名抵達後：關閉 SlowMo 並進入鎖速模式（直到全員到線）
+    // ★ 核心變更：第一名抵達後，關閉 SlowMo 並進入 postFinishSpeedUp 模式
     if (firstJustFinished) {
       this._flags.firstHorseFinished = true;
-
       if (this.SLOWMO.active) {
         this.SLOWMO.active = false;
-        //this.log?.('[SlowMo] deactivated (first horse finished)');
-      }
-
-      // 進入鎖速模式
-      this.postSlowMoFrozen = true;
-
-      // 如在 Lock 流程，切到 FinishGuard（語意：維持秩序到全員到線）
-      if (this.lockStage === this.LOCK_STAGE.PreLock || this.lockStage === this.LOCK_STAGE.LockStrong) {
-        this.lockStage = this.LOCK_STAGE.FinishGuard;
-        //this.log?.('[Lock] FinishGuard (maintain order until all finished)');
+        this.postFinishSpeedUp = true;
+        this.speedUpStartTime = t;
+        // 在後續階段，Lock 模式將會維持在 FinishGuard，直到所有馬匹都完賽
+        if (this.lockStage === this.LOCK_STAGE.PreLock || this.lockStage === this.LOCK_STAGE.LockStrong) {
+          this.lockStage = this.LOCK_STAGE.FinishGuard;
+        }
       }
     }
 
