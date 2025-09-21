@@ -193,8 +193,8 @@ export class HorsePlayer {
    */
   runSpeedVFX(loop = false) {
     if (!this._isLoaded) {
-        console.warn("[HorsePlayer] 模型尚未載入完成，無法啟動特效。");
-        return;
+      console.warn("[HorsePlayer] 模型尚未載入完成，無法啟動特效。");
+      return;
     }
     // 每次執行前都先停止舊的特效
     this.stopSpeedVFX();
@@ -353,7 +353,8 @@ export class HorsePlayer {
       }
     }
 
-    return bound >= 3;
+    const hasIdle = !!this._actions.Idle01 || !!this._actions.Idle02;
+    return bound >= 3 && hasIdle;
   }
 
   _makeSubclipsFromBase() {

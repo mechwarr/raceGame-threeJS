@@ -44,7 +44,7 @@ let gameState = STATE.Ready;
 let renderer, scene, camera, clock;
 let horses = []; // { player: HorsePlayer, startPos: THREE.Vector3, laneZ:number, faceRight:boolean }
 const laneCount = 11;
-const trackLength = 1000;
+const trackLength = 2000;
 const startLineX = -trackLength / 2;
 const finishLineX = trackLength / 2;
 const finishDetectX = finishLineX - 0.5; // 衝線判定（略早一點）
@@ -307,6 +307,8 @@ function initThree() {
 
   // 6) Audio + UI
   audioSystem = new AudioSystem();
+  audioSystem.addSFX('cheer', '../public/sound/Large Crowd - Shout - Yeah! - Short_5.1.wav');
+  //audioSystem.addSFX('horse_run', '../public/sound/horse_run.mp3');
   ui = new UIController({
     providers: {
       getGameId: () => currentGameId,
@@ -390,10 +392,6 @@ function getTop5Labels() {
   return finalRank.slice(0, 5).map(labelOfNumber);
 }
 
-function getTop5FromFinalRank() {
-  return this.forcedTop5Rank;
-}
-
 // ===== 相機控制（固定視角；Pause 保持當前畫面） =====
 function updateCamera() {
   if (gameState === STATE.Paused) return;
@@ -432,9 +430,12 @@ function updateCamera() {
         setOnlyTop5Visible(top5Numbers);
         moveCameraToAward();
         orientTop5ToCamera();
+        playTop5Idle();
 
         ui?.show?.('finished');
         allArrivedShown = true;
+        audioSystem.playSFX('cheer', 1);
+        audioSystem.setBGMVolume(0.5);
         parent?.postMessage?.({
           type: 'game:finished',
           gameId: currentGameId,
@@ -445,6 +446,26 @@ function updateCamera() {
     } else {
       gotoPose(finishLineX, CAM.SIDE_FIN.h, CAM.SIDE_FIN.z, CAM.SIDE_FIN.lerp);
     }
+  }
+}
+
+// ★ 在 Finished 狀態呼叫：讓前五名播放 Idle 動畫
+function playTop5Idle() {
+  console.log('playTop5Idle');
+  const top5 = (race?.getFinalRank?.() ?? []).slice(0, 5);
+  for (let k = 0; k < top5.length; k++) {
+    const idx = clamp((top5[k] | 0) - 1, 0, laneCount - 1);
+    const hObj = horses[idx];
+    const p = hObj?.player;
+    if (!p) continue;
+    console.log(`Top${k + 1} horse #${top5[k]} playIdle01`);
+    p.playIdle01(true, 0.15, 1, Math.random()); // loop, fade, speed, random offset
+  }
+}
+
+function updateAllHorseAnimations(dt) {
+  for (let i = 0; i < horses.length; i++) {
+    horses[i]?.player?.update(dt, camera); // 注意你的 HorsePlayer.update 需要 camera 參數
   }
 }
 
@@ -508,6 +529,10 @@ function animate() {
     }
   }
 
+  if (gameState === STATE.Finished && race?.isEveryoneFinished?.()) {
+    updateAllHorseAnimations(dt);
+  }
+
   updateCamera();
   ui?.tick?.();
   renderer.render(scene, camera);
@@ -545,6 +570,8 @@ function doStartRace() {
 
   gameState = STATE.Running;
   ui?.show?.('game');
+  audioSystem.loadBGM('../public/sound/Rossini - William Tell Overture (Synths).wav').catch(() => { });
+  audioSystem.setBGMVolume(1.0);
   log('[State] Running | target duration =', RACE.durationSec ? `${RACE.durationSec.toFixed(2)}s` : '(auto)');
 }
 
