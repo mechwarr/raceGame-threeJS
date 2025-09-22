@@ -406,4 +406,18 @@ export class HorsePlayer {
     this._current = next;
     return next;
   }
+
+  /**
+   * 設定目前播放中動畫的「單次播放速度」
+   * @param {number} speed - 播放速度倍率，預設為 1
+   */
+  setAnimationSpeed(speed = 1) {
+    if (!this._current) {
+      console.warn("[HorsePlayer] 沒有正在播放的動畫。");
+      return;
+    }
+    const userSpeed = Math.max(0.01, Number(speed) || 1);
+    this._current.userSpeed = userSpeed;
+    this._current.timeScale = this.mixer.timeScale * userSpeed;
+  }
 }
