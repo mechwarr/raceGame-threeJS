@@ -151,6 +151,7 @@ export class GameView {
       const pill = document.createElement('div');
       Object.assign(pill.style, {
         height: '22px',
+        width: '22px',
         lineHeight: '22px',
         padding: '0 10px',
         fontSize: '12px',
