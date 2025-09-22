@@ -85,10 +85,10 @@ const CAM = {
   SIDE_FIN: { x: finishLineX, z: 180, h: 60, lerp: 0.15 },
   AWARD: {
     ZOOM: 0.3,
-    POS: { x: -50, y: 5, z: 0 },   // y=相機高度；x/z 不再用來決定角度（可忽略）
+    POS: { x: -50, y: 5, z: 0 }, // y=相機高度；x/z 不再用來決定角度（可忽略）
     LOOK: { x: 0, y: 6, z: 0 },
-    AZIMUTH_DEG: 90,               // ★ 新增：繞頒獎台的水平角度（0=正面，90=右側，-90=左側，180=背面）
-    DIST_SCALE: 1.0                // ★ 新增：距離倍率（可微調遠近，預設 1）
+    AZIMUTH_DEG: 90, // ★ 新增：繞頒獎台的水平角度（0=正面，90=右側，-90=左側，180=背面）
+    DIST_SCALE: 1.0 // ★ 新增：距離倍率（可微調遠近，預設 1）
   },
 };
 
@@ -115,25 +115,36 @@ function ensurePodium() {
   podiumGroup = new THREE.Group();
   podiumGroup.name = 'PodiumGroup';
 
-  const baseSizeX = 2.2 * s;      // 台面寬（X）
-  const baseSizeZ = 2.2 * s;      // 台面深（Z）
+  const baseSizeX = 2.2 * s; // 台面寬（X）
+  const baseSizeZ = 2.2 * s; // 台面深（Z）
 
   // 🔧 將「x 軸的排列間距」改為變數 y（你要的命名）
-  const y = podiumGap * s;        // ← 橫向（X）間距，變數名叫 y
+  const y = podiumGap * s; // ← 橫向（X）間距，變數名叫 y
 
   const mats = [
-    new THREE.MeshStandardMaterial({ color: 0xf6d15a }),
-    new THREE.MeshStandardMaterial({ color: 0xc0c0c0 }),
-    new THREE.MeshStandardMaterial({ color: 0xcd7f32 }),
-    new THREE.MeshStandardMaterial({ color: 0x8fa3b0 }),
-    new THREE.MeshStandardMaterial({ color: 0x8fb08f }),
+    new THREE.MeshStandardMaterial({
+      color: 0xf6d15a
+    }),
+    new THREE.MeshStandardMaterial({
+      color: 0xc0c0c0
+    }),
+    new THREE.MeshStandardMaterial({
+      color: 0xcd7f32
+    }),
+    new THREE.MeshStandardMaterial({
+      color: 0x8fa3b0
+    }),
+    new THREE.MeshStandardMaterial({
+      color: 0x8fb08f
+    }),
   ];
 
   for (let k = 0; k < 5; k++) {
     const h = podiumHeights[k] * s;
     const geo = new THREE.BoxGeometry(baseSizeX, h, baseSizeZ);
     const mesh = new THREE.Mesh(geo, mats[k % mats.length]);
-    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
 
     // 🔧 原本是 Z 軸展開；改成 X 軸展開，Z 固定在賽道中線 0
     //    中心往左右排開：..., -2y, -1y, 0, +1y, +2y
@@ -251,7 +262,8 @@ function distanceForViewHeight(viewHeight, fovDeg, minAhead = 0) {
 }
 function applyVerticalFraming(pos, look) {
   const offsetY = (CAM.VIEW_HEIGHT * 0.5) * CAM.FRAMING_BIAS_Y;
-  pos.y += offsetY; look.y += offsetY;
+  pos.y += offsetY;
+  look.y += offsetY;
 }
 function placeWithFixedDir(lookX, eyeH, eyeZ) {
   const d = distanceForViewHeight(CAM.VIEW_HEIGHT, CAM.FOV_DEG, CAM.LOOK_AHEAD_MIN);
@@ -259,17 +271,25 @@ function placeWithFixedDir(lookX, eyeH, eyeZ) {
   const dir = FIXED_DIR.clone().normalize();
   const look = pos.clone().add(dir.multiplyScalar(d));
   applyVerticalFraming(pos, look);
-  return { pos, look };
+  return {
+    pos,
+    look
+  };
 }
 function createCamera() {
   const aspect = canvas.clientWidth / canvas.clientHeight || 16 / 9;
   camera = new THREE.PerspectiveCamera(CAM.FOV_DEG, aspect, 0.1, 2000);
   const initX = CAM.SIDE_READY.x;
-  const { pos, look } = placeWithFixedDir(initX, CAM.SIDE_READY.h, CAM.SIDE_READY.z);
+  const {
+    pos,
+    look
+  } = placeWithFixedDir(initX, CAM.SIDE_READY.h, CAM.SIDE_READY.z);
   gameCam = new GameCamera(camera, {
     initialPos: [pos.x, pos.y, pos.z],
     initialLookAt: [look.x, look.y, look.z],
-    followDistance: 0, height: 0, lerp: 0.12,
+    followDistance: 0,
+    height: 0,
+    lerp: 0.12,
   });
 }
 function applyCameraResize() {
@@ -277,7 +297,8 @@ function applyCameraResize() {
   const h = Math.min(window.innerHeight * 0.9, 1200 / (16 / 9));
   renderer?.setSize(w, h, false);
   if (!camera) return;
-  camera.aspect = w / h; camera.updateProjectionMatrix();
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
 }
 function resize() { applyCameraResize(); }
 window.addEventListener('resize', resize);
@@ -285,10 +306,16 @@ window.addEventListener('resize', resize);
 // ===== 初始化場景 =====
 function initThree() {
   // 1) Renderer：交給 SceneSetup 建立
-  renderer = createRenderer(canvas, { antialias: true, alpha: true, pixelRatioCap: 2 });
+  renderer = createRenderer(canvas, {
+    antialias: true,
+    alpha: true,
+    pixelRatioCap: 2
+  });
 
   // 2) Scene：預設黑色；setupLights 會載入 skybox 覆蓋 scene.background
-  scene = createScene({ background: 0x000000 });
+  scene = createScene({
+    background: 0x000000
+  });
 
   // 3) Camera：維持你的透視相機配置
   createCamera();
@@ -303,7 +330,13 @@ function initThree() {
   });
 
   // 5) 場景地形/賽道
-  buildField(scene, { trackLength, laneCount, startLineX, finishLineX, laneGap: 22 });
+  buildField(scene, {
+    trackLength,
+    laneCount,
+    startLineX,
+    finishLineX,
+    laneGap: 22
+  });
 
   // 6) Audio + UI
   audioSystem = new AudioSystem();
@@ -315,6 +348,18 @@ function initThree() {
       getRanking: () => getRankingLabels(),
       getTop5: () => getTop5Labels(),
     },
+    hooks: {
+      onMute: (isMuted) => {
+        if (audioSystem) {
+          audioSystem.setMasterVolume(isMuted ? 0 : 1);
+        }
+      },
+      onVolume: (value) => {
+        if (audioSystem) {
+          audioSystem.setMasterVolume(Number(value));
+        }
+      },
+    }
   });
   ui.register('ready', GameReadyView);
   ui.register('game', GameView);
@@ -329,7 +374,11 @@ function initThree() {
 // ★ 建立 11 匹馬（用 HorsePlayer）
 async function loadHorses() {
   const result = await loadHorsesAsync(scene, {
-    laneCount, startLineX, HORSE_ROOT, HORSE_GLTF, HORSE_TEX,
+    laneCount,
+    startLineX,
+    HORSE_ROOT,
+    HORSE_GLTF,
+    HORSE_TEX,
     onProgress: reportProgress
   });
   horses = result.horses;
@@ -339,8 +388,14 @@ async function loadHorses() {
 
   // 初始化 RaceEngine（把工具函式與邊界傳給它）
   race = new RaceEngine({
-    laneCount, startLineX, finishLineX, finishDetectX,
-    noise, randFloat, clamp, lerp,
+    laneCount,
+    startLineX,
+    finishLineX,
+    finishDetectX,
+    noise,
+    randFloat,
+    clamp,
+    lerp,
     log,
   });
   race.initWithHorses(horses);
@@ -360,10 +415,14 @@ const setHorseRot = (i, faceRight = true) => {
 
 // 排名 / 領先（僅給相機/備援用；真實名次由 RaceEngine 管）
 function computeLeader() {
-  let maxX = -Infinity, bestIndex = -1;
+  let maxX = -Infinity,
+    bestIndex = -1;
   for (let i = 0; i < horses.length; i++) {
     const x = getHorseX(i);
-    if (x > maxX) { maxX = x; bestIndex = i; }
+    if (x > maxX) {
+      maxX = x;
+      bestIndex = i;
+    }
   }
   return bestIndex >= 0 ? horses[bestIndex] : null;
 }
@@ -401,7 +460,10 @@ function updateCamera() {
   editTool?.update(dNow, gameState);
 
   const gotoPose = (lookX, h, z, lerp) => {
-    const { pos, look } = placeWithFixedDir(lookX, h, z);
+    const {
+      pos,
+      look
+    } = placeWithFixedDir(lookX, h, z);
     camera.position.lerp(pos, lerp);
     camera.lookAt(look);
   };
@@ -514,14 +576,18 @@ function animate() {
       const now = clock.elapsedTime;
       let allDone = true;
       for (const it of standbyPlan.items) {
-        const p = getHorse(it.i); if (!p) continue;
+        const p = getHorse(it.i);
+        if (!p) continue;
         const a = THREE.MathUtils.clamp((now - it.t0) / it.dur, 0, 1);
         p.group.position.lerpVectors(it.from, it.to, a);
         const dirRight = (it.to.x - it.from.x) >= 0;
         setHorseRot(it.i, dirRight);
         p.update(dt);
         if (a < 1) allDone = false;
-        else { p.playIdle01(true, 0.15); setHorseRot(it.i, true); }
+        else {
+          p.playIdle01(true, 0.15);
+          setHorseRot(it.i, true);
+        }
       }
       standbyPlan.done = allDone;
     } else {
@@ -539,7 +605,25 @@ function animate() {
   canvas.classList.toggle('paused', gameState === STATE.Paused);
 }
 
-// ===== 事件 & Lifecycle =====
+// 整局時長控制（持續沿用你的設定）
+const RACE = {
+  durationMinSec: 22,
+  durationMaxSec: 28,
+  durationSec: null, // Running → 第一名過線的時間
+};
+
+// ★ 新增：處理從暫停狀態恢復遊戲的函式
+function doResumeRace() {
+  if (gameState !== STATE.Paused) {
+    return;
+  }
+  gameState = STATE.Running;
+  // ★ 調用 AudioSystem 的恢復方法
+  audioSystem.onGameResumed();
+  ui?.show?.('game');
+  log('[State] Resumed');
+}
+
 function doStartRace() {
   // ★★★ 新局前清理：移除頒獎台＋顯示全部馬
   destroyPodium();
@@ -570,22 +654,23 @@ function doStartRace() {
 
   gameState = STATE.Running;
   ui?.show?.('game');
-  audioSystem.loadBGM('../public/sound/Rossini - William Tell Overture (Synths).wav').catch(() => { });
+  audioSystem.loadBGM('../public/sound/Rossini - William Tell Overture (Synths).wav').catch(() => {});
   audioSystem.setBGMVolume(1.0);
   log('[State] Running | target duration =', RACE.durationSec ? `${RACE.durationSec.toFixed(2)}s` : '(auto)');
 }
 
-// 整局時長控制（持續沿用你的設定）
-const RACE = {
-  durationMinSec: 22,
-  durationMaxSec: 28,
-  durationSec: null,  // Running → 第一名過線的時間
-};
-
 // 訊息 API：host 可帶入 payload { gameid, rank, countdown, durationMinSec, durationMaxSec }
 function onGameStart(gameid, rank, countdown, durationMinSec, durationMaxSec) {
   if (gameState === STATE.Finished && allArrivedShown) return;
-  if (!(gameState === STATE.Ready || gameState === STATE.Paused)) return;
+
+  // ★ 新增：如果目前是暫停狀態，就直接呼叫恢復函式並返回
+  if (gameState === STATE.Paused) {
+    doResumeRace();
+    return;
+  }
+
+  // ★ 僅在遊戲處於 Ready 狀態時才執行完整啟動邏輯
+  if (gameState !== STATE.Ready) return;
 
   if (typeof gameid === 'string' && gameid.trim()) {
     currentGameId = gameid.trim();
@@ -630,31 +715,47 @@ function playerStandby(secs) {
   const dur = Math.max(0, total - 1);
   if (dur === 0) {
     for (let i = 0; i < laneCount; i++) {
-      const hObj = horses[i]; if (!hObj?.player) continue;
+      const hObj = horses[i];
+      if (!hObj?.player) continue;
       hObj.player.group.position.copy(hObj.startPos);
       setHorseRot(i, true);
       hObj.player.playIdle01(true, 0.15);
     }
-    standbyPlan = { items: [], done: true };
+    standbyPlan = {
+      items: [],
+      done: true
+    };
     return;
   }
   const t0 = clock.elapsedTime;
   const items = [];
   for (let i = 0; i < laneCount; i++) {
-    const hObj = horses[i]; if (!hObj?.player) continue;
+    const hObj = horses[i];
+    if (!hObj?.player) continue;
     const from = hObj.player.group.position.clone();
     const to = hObj.startPos.clone();
     const faceRight = (to.x - from.x) >= 0;
     setHorseRot(i, faceRight);
     hObj.player.playWalk(true, 0.15, 2, Math.random());
-    items.push({ i, from, to, t0, dur });
+    items.push({
+      i,
+      from,
+      to,
+      t0,
+      dur
+    });
   }
-  standbyPlan = { items, done: false };
+  standbyPlan = {
+    items,
+    done: false
+  };
 }
 
 function onGamePause() {
   if (gameState === STATE.Running) {
     gameState = STATE.Paused;
+    // ★ 調用 AudioSystem 的暫停方法
+    audioSystem.onGamePaused();
     log('[State] Paused');
   }
 }
@@ -677,21 +778,31 @@ function onGameEnd() {
   countdownOverlay?.remove();
   editTool?.destroy?.();
   ui?.destroy?.();
-  if (renderer) { renderer.dispose(); renderer.forceContextLoss?.(); }
+  if (renderer) {
+    renderer.dispose();
+    renderer.forceContextLoss?.();
+  }
 }
 
 // 訊息處理
 function onMsg(ev) {
-  const msg = ev.data; if (!msg || typeof msg !== 'object') return;
+  const msg = ev.data;
+  if (!msg || typeof msg !== 'object') return;
   switch (msg.type) {
     case 'host:start': {
       const p = msg.payload || {};
       onGameStart(p.gameid ?? p.gameId, p.rank, p.countdown, p.durationMinSec, p.durationMaxSec);
       break;
     }
-    case 'host:pause': onGamePause(); break;
-    case 'host:end': onGameEnd(); break;
-    case 'camera:config': gameCam?.configure(msg.payload || {}); break;
+    case 'host:pause':
+      onGamePause();
+      break;
+    case 'host:end':
+      onGameEnd();
+      break;
+    case 'camera:config':
+      gameCam?.configure(msg.payload || {});
+      break;
   }
 }
 window.addEventListener('message', onMsg);
@@ -727,10 +838,19 @@ window.addEventListener('message', onMsg);
     banner('three.js + 馬匹載入完成', true);
 
     // 在 boot() 裡（initThree() 後）
-    editTool = mountEditTool(false, { getCAM, getCamera, getDirVec, startLineX });
+    editTool = mountEditTool(false, {
+      getCAM,
+      getCamera,
+      getDirVec,
+      startLineX
+    });
 
   } catch (e) {
-    reportError(e); banner('初始化失敗', false); log('[Boot Error]', e);
-    if (location.protocol === 'file:') { log('提示：請改用本機 HTTP 伺服器（例如 `npx http-server`）。'); }
+    reportError(e);
+    banner('初始化失敗', false);
+    log('[Boot Error]', e);
+    if (location.protocol === 'file:') {
+      log('提示：請改用本機 HTTP 伺服器（例如 `npx http-server`）。');
+    }
   }
 })();

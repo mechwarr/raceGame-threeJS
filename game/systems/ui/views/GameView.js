@@ -12,7 +12,7 @@ export class GameView {
 
     // 先給通用樣式（若後面偵測到 canvas，會切換為 position:fixed 並鎖定到 canvas）
     Object.assign(this.bar.style, {
-      position: 'absolute',     // 若沒抓到 canvas 會維持 absolute + width:100%
+      position: 'absolute',
       left: '0',
       top: '0',
       width: '100%',
@@ -21,11 +21,12 @@ export class GameView {
       display: 'flex',
       alignItems: 'center',
       gap: '12px',
-      background: '#000',       // 黑底
+      background: 'rgba(0,0,0,0.85)', // 使用半透明黑底
       color: '#e7eef6',
-      border: 'none',           // 無邊框
+      border: 'none',
       borderRadius: '0',
       zIndex: 1000,
+      fontFamily: 'sans-serif' // 確保字體統一
     });
 
     // GameID
@@ -38,7 +39,7 @@ export class GameView {
     this.rankRow = document.createElement('div');
     Object.assign(this.rankRow.style, {
       display: 'flex',
-      flexDirection: 'row',   // 由左到右（第一名在最左）
+      flexDirection: 'row',
       alignItems: 'center',
       gap: '0',
       flex: '1',
@@ -68,15 +69,63 @@ export class GameView {
 
     // 音量 Slider
     this.vol = document.createElement('input');
-    this.vol.type = 'range'; this.vol.min = '0'; this.vol.max = '1'; this.vol.step = '0.01'; this.vol.value = '1';
+    this.vol.type = 'range';
+    this.vol.min = '0';
+    this.vol.max = '1';
+    this.vol.step = '0.01';
+    this.vol.value = '1';
+
+    // 這裡，我們用一個 <style> 標籤來動態插入 CSS 規則
+    // 這是解決 JS 中無法直接操作偽元素的常用方式
+    const styleId = 'volume-slider-style';
+    if (!document.getElementById(styleId)) {
+        const styleSheet = document.createElement('style');
+        styleSheet.id = styleId;
+        styleSheet.innerHTML = `
+            #three-canvas + .top-bar input[type="range"]::-webkit-slider-runnable-track {
+                background: linear-gradient(to right, #4CAF50 0%, #F5F55B 100%);
+                border-radius: 5px;
+                height: 5px;
+                cursor: pointer;
+            }
+            #three-canvas + .top-bar input[type="range"]::-webkit-slider-thumb {
+                background: #e7eef6;
+                width: 15px;
+                height: 15px;
+                border-radius: 50%;
+                border: 2px solid #141a22;
+                box-shadow: 0 0 2px rgba(0,0,0,0.5);
+                margin-top: -5px;
+                cursor: pointer;
+            }
+            #three-canvas + .top-bar input[type="range"]::-moz-range-track {
+                background: linear-gradient(to right, #4CAF50 0%, #F5F55B 100%);
+                border-radius: 5px;
+                height: 5px;
+                cursor: pointer;
+            }
+            #three-canvas + .top-bar input[type="range"]::-moz-range-thumb {
+                background: #e7eef6;
+                width: 15px;
+                height: 15px;
+                border: 2px solid #141a22;
+                box-shadow: 0 0 2px rgba(0,0,0,0.5);
+                border-radius: 50%;
+                cursor: pointer;
+            }
+        `;
+        document.head.appendChild(styleSheet);
+    }
+    
     Object.assign(this.vol.style, { width: '160px' });
     this.vol.addEventListener('input', ()=> this.ctx.hooks.onVolume?.(Number(this.vol.value)));
 
     this.bar.append(this.gameIdSpan, this.rankRow, this.soundBtn, this.vol);
+    this.bar.classList.add('top-bar'); // 添加 class 以供 CSS 選擇器使用
 
     // 若能取得 canvas，切為 fixed 並精準貼齊 canvas 上方寬度
     this._positionToCanvas = () => {
-      if (!this.canvas || this.bar.parentElement === this.root) return; // 若沒移到 body 就不處理
+      if (!this.canvas || this.bar.parentElement === this.root) return;
       const rect = this.canvas.getBoundingClientRect();
       Object.assign(this.bar.style, {
         position: 'fixed',
@@ -97,7 +146,6 @@ export class GameView {
       this._ro = new ResizeObserver(this._positionToCanvas);
       this._ro.observe(this.canvas);
     } else {
-      // 退回 root 寬度
       this.root.appendChild(this.bar);
     }
 
@@ -131,7 +179,7 @@ export class GameView {
   _renderRanking(){
     const getRanking = this.ctx?.providers?.getRanking;
     if (!getRanking) return;
-    const list = getRanking();                 // 例如：['#3','#1','#5', ...]（第一名在最左）
+    const list = getRanking();
     if (!Array.isArray(list)) return;
 
     // 顏色表
@@ -140,7 +188,7 @@ export class GameView {
       5:'#5DADA9',  6:'#24276F',  7:'#B1B1B1',  8:'#C73F39',
       9:'#601E1A', 10:'#355D3E', 11:'#52194E',
     };
-    const SLANT = 14; // 斜邊偏移（px），同時用來計算負邊距
+    const SLANT = 14;
 
     this.rankRow.innerHTML = '';
 
@@ -158,17 +206,15 @@ export class GameView {
         fontWeight: 700,
         color: '#fff',
         background: bg,
-        // 平行四邊形（右上、左下）
         clipPath: `polygon(${SLANT}px 0, 100% 0, calc(100% - ${SLANT}px) 100%, 0 100%)`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         whiteSpace: 'nowrap',
-        // 緊貼排版：後續色塊用負邊距吃掉斜角
         marginLeft: idx === 0 ? '0' : `-${Math.floor(SLANT*0.75)}px`,
-        boxShadow: '0 0 0 1px rgba(0,0,0,0.15) inset', // 內陰影微分界線（非邊框）
+        boxShadow: '0 0 0 1px rgba(0,0,0,0.15) inset',
       });
-      pill.textContent = label; // 保留原始「#編號」文字
+      pill.textContent = label;
 
       this.rankRow.appendChild(pill);
     });
