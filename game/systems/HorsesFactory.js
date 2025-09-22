@@ -36,7 +36,7 @@ export async function loadHorsesAsync(scene, opts) {
     if (laneZ > maxLaneZ) maxLaneZ = laneZ;
 
     const startPos = new THREE.Vector3(startLineX, 0, laneZ);
-    const randX = rand2(startLineX - 100, startLineX + 100);
+    const randX = rand2(startLineX - 100, startLineX);
     const faceRight = Math.random() < 0.5;
 
     const hp = new HorsePlayer(scene, HORSE_ROOT, HORSE_GLTF, playerNo, {
