@@ -784,7 +784,7 @@
             const delta = clock.getDelta();
             
             if (horsePlayerInstance) {
-                horsePlayerInstance.update(delta);
+                horsePlayerInstance.update(delta, camera);
             }
 
             camera.fov += (targetFOV - camera.fov) * 0.05;

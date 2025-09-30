@@ -657,6 +657,10 @@ function doStartRace() {
   audioSystem.loadBGM('../public/sound/Rossini - William Tell Overture (Synths).wav').catch(() => {});
   audioSystem.setBGMVolume(1.0);
   log('[State] Running | target duration =', RACE.durationSec ? `${RACE.durationSec.toFixed(2)}s` : '(auto)');
+
+  for(let i=0; i< horses.length; i++) {
+    horses[i]?.player?.runSpeedVFX(true);
+  }
 }
 
 // 訊息 API：host 可帶入 payload { gameid, rank, countdown, durationMinSec, durationMaxSec }

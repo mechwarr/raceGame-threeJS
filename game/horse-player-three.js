@@ -160,9 +160,15 @@ export class HorsePlayer {
     }
   }
 
-  update(deltaSeconds, camera) { // ★ 調整：新增 camera 參數
+  /**
+   * 每幀更新動畫和特效
+   * @param {number} deltaSeconds
+   * @param {THREE.Camera} camera - 必須傳入 camera 才能正確計算 billboard 效果
+   */
+  update(deltaSeconds, camera) { 
     if (this.mixer) this.mixer.update(deltaSeconds);
-    // ★ 調整：只有在 windFx 存在時才進行更新
+    
+    // ★ 處理 BillboardSequenceEffect 更新
     if (this._windFx) {
       this._windFx.update(deltaSeconds, camera);
     }
@@ -188,7 +194,10 @@ export class HorsePlayer {
     await this._applyPlayerTexture(this.playerNo);
   }
 
+  // ============== 特效開關方法 ==============
+
   /**
+   * 啟動圖片序列特效 (BillboardSequenceEffect)
    * @param {boolean} [loop=false] - 是否循環播放
    */
   runSpeedVFX(loop = false) {
@@ -198,24 +207,45 @@ export class HorsePlayer {
     }
     // 每次執行前都先停止舊的特效
     this.stopSpeedVFX();
-    // 建立新的特效
-    this._windFx = new BillboardSequenceEffect(this.model); // ★ 調整：改傳入 this.model
-    this._windFx.start(loop);
+    
+    // 建立新的特效，傳入 this (HorsePlayer 實例)
+    this._windFx = new BillboardSequenceEffect(this); 
+    
+    // 假定 BillboardSequenceEffect 有 start/stop 方法來控制動畫播放
+    if (this._windFx.start) {
+        this._windFx.start(loop);
+    } else {
+        // 如果沒有 start，則假設它在建構後預設已啟動，或使用 setVisible 
+        this._windFx.setVisible?.(true); 
+    }
+    
     this._windFxLoop = loop;
   }
 
+  /**
+   * 停止並清理圖片序列特效
+   */
   stopSpeedVFX() {
     if (this._windFx) {
-      this._windFx.stop();
+      // 假定 BillboardSequenceEffect 有 stop 方法
+      if (this._windFx.stop) {
+        this._windFx.stop();
+      } else {
+        this._windFx.setVisible?.(false);
+      }
+      
       // 等待特效結束後再清理，避免立即釋放資源導致顯示錯誤
       setTimeout(() => {
         if (this._windFx) {
+          // 清理資源並設為 null
           this._windFx.dispose();
           this._windFx = null;
         }
       }, 500); // 這裡的延遲時間可以根據特效持續時間微調
     }
   }
+
+  // ======================================
 
   dispose() {
     if (this._current) this._current.stop();

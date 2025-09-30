@@ -12,19 +12,21 @@ export class BillboardSequenceEffect {
     }
 
     // === 預設參數（可依專案調整）===
-    this.folderUrl = 'public/sheets';     // 圖片序列資料夾
+    this.folderUrl = '/public/sheets';     // 圖片序列資料夾
     this.prefix    = 'sparkle_';          // 檔名前綴
     this.start     = 0;                   // 起始編號（會自動補三位數）
-    this.end       = 23;                  // 結束編號
-    this.fps       = 15;                  // 預設播放幀率
-    this.alphaTest = 0.5;                 // 透明裁切
+    this.end       = 24;                  // 結束編號
+    this.fps       = 30;                  // 預設播放幀率
+    // 移除了 this.alphaTest
     this.doubleSide = true;               // 是否雙面
     this.renderOrder = 999;               // 讓它後畫比較不會被蓋住
     this.depthWrite = false;              // 不寫入深度，避免排序黑化
     this.lookAtMode = 'full';             // 'full' 完全平行螢幕；'yaw' 只跟水平面朝向
-    this.rotationInScreenDeg = 0;         // 畫面內的額外旋轉（度）
-    this.offset = new THREE.Vector3(-50, 30, 0); // 相對馬模型的位置
-    this.scale  = 1;                      // 整體縮放
+    this.rotationInScreenDeg = 1;         // 畫面內的額外旋轉（度）
+    this.offset = new THREE.Vector3(-50, 50, 10); // 相對馬模型的位置
+    this.scale  = 0.07;                      // 整體縮放
+    this.globalOpacity = 0.6;            // 全局透明度（可用來淡入淡出）
+    this.timescale = 1;                  // 播放時間縮放（影響播放速度）
 
     // === 狀態 ===
     this._horse = horsePlayer;
@@ -38,7 +40,7 @@ export class BillboardSequenceEffect {
 
     this._frameIdx = 0;
     this._frameTimer = 0;
-    this._frameInterval = 1 / this.fps;
+    this._frameInterval = 1 / this.fps; 
 
     // 掛上父層
     this._parent.add(this._billboardNode);
@@ -56,6 +58,7 @@ export class BillboardSequenceEffect {
   setScale(s)   { this.scale = s; }
   setRotationInScreenDeg(deg) { this.rotationInScreenDeg = deg; }
   setLookAtMode(mode/* 'full' | 'yaw' */){ this.lookAtMode = mode === 'yaw' ? 'yaw' : 'full'; }
+  setTimescale(ts) { this.timescale = Math.max(0.01, ts); }
 
   dispose() {
     if (this._mesh) {
@@ -80,14 +83,17 @@ export class BillboardSequenceEffect {
   update(delta, camera) {
     if (!this._ready || !this._enabled || !this._mesh) return;
 
+    // 計算實際幀間隔（受 timescale 影響）
+    const actualFrameInterval = this._frameInterval / this.timescale;
+
     // 對齊攝影機（billboard）
     this._applyBillboard(camera);
 
     // 播放序列
     this._frameTimer += delta;
-    if (this._frameTimer >= this._frameInterval) {
+    if (this._frameTimer >= actualFrameInterval) {
       this._frameIdx = (this._frameIdx + 1) % this._textures.length;
-      this._frameTimer = this._frameTimer % this._frameInterval;
+      this._frameTimer = this._frameTimer % actualFrameInterval;
       this._mesh.material.map = this._textures[this._frameIdx];
       this._mesh.material.needsUpdate = true;
     }
@@ -128,9 +134,10 @@ export class BillboardSequenceEffect {
       const mat = new THREE.MeshBasicMaterial({
         map: tex0,
         transparent: true,
-        alphaTest: this.alphaTest,
+        // *** 移除了 alphaTest 屬性，讓 WebGL Blending 處理半透明 ***
         side: this.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
         depthWrite: this.depthWrite,
+        opacity: this.globalOpacity,
       });
 
       const w = tex0.image.width  || 256;
@@ -156,7 +163,7 @@ export class BillboardSequenceEffect {
 
     // 額外增加一個 45 度旋轉
     const extraRotationRad = THREE.MathUtils.degToRad(45);
-    const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -0.6), extraRotationRad);
+    const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 0), extraRotationRad);
 
     if (this.lookAtMode === 'full') {
       // 完全跟相機同姿態（最平行）
