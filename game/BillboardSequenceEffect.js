@@ -23,10 +23,13 @@ export class BillboardSequenceEffect {
     this.depthWrite = false;              // 不寫入深度，避免排序黑化
     this.lookAtMode = 'full';             // 'full' 完全平行螢幕；'yaw' 只跟水平面朝向
     this.rotationInScreenDeg = 1;         // 畫面內的額外旋轉（度）
-    this.offset = new THREE.Vector3(-50, 50, 10); // 相對馬模型的位置
-    this.scale  = 0.07;                      // 整體縮放
+    this.offset = new THREE.Vector3(-50, 60, 10); // 相對馬模型的位置
+    this.scale  = 0.5;                      // 整體縮放
     this.globalOpacity = 0.6;            // 全局透明度（可用來淡入淡出）
     this.timescale = 1;                  // 播放時間縮放（影響播放速度）
+
+    /** @type {function(): void | null} */
+    this.onComplete = null; 
 
     // === 狀態 ===
     this._horse = horsePlayer;
@@ -46,6 +49,8 @@ export class BillboardSequenceEffect {
     this._parent.add(this._billboardNode);
     this._billboardNode.position.copy(this.offset);
     this._billboardNode.scale.set(this.scale, this.scale, this.scale);
+    const initialRotationRad = THREE.MathUtils.degToRad(-90);
+    this._billboardNode.rotation.y = initialRotationRad;
 
     // 開始載入
     this._loadTextures();
@@ -92,10 +97,25 @@ export class BillboardSequenceEffect {
     // 播放序列
     this._frameTimer += delta;
     if (this._frameTimer >= actualFrameInterval) {
-      this._frameIdx = (this._frameIdx + 1) % this._textures.length;
-      this._frameTimer = this._frameTimer % actualFrameInterval;
-      this._mesh.material.map = this._textures[this._frameIdx];
-      this._mesh.material.needsUpdate = true;
+      // 🎯 核心修改：判斷是否到達最後一幀
+      if (this._frameIdx < this._textures.length - 1) {
+        // 繼續下一幀
+        this._frameIdx = this._frameIdx + 1;
+        this._frameTimer = this._frameTimer % actualFrameInterval;
+        this._mesh.material.map = this._textures[this._frameIdx];
+        this._mesh.material.needsUpdate = true;
+      } else {
+        // 已經是最後一幀 (this._frameIdx === this._textures.length - 1)
+        this._frameTimer = -1; // 將 Timer 設為負值或任何標記，確保這個區塊不會再次進入
+
+        // 🎯 播放完畢，觸發回調
+        if (this.onComplete) {
+            this.onComplete();
+        }
+        
+        // 播放完後，通常會呼叫 setVisible(false) 或 dispose() 來移除特效
+        // 但這裡只負責通知，移除由外部決定。
+      }
     }
 
     // 位置/縮放
@@ -163,7 +183,7 @@ export class BillboardSequenceEffect {
 
     // 額外增加一個 45 度旋轉
     const extraRotationRad = THREE.MathUtils.degToRad(45);
-    const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 0), extraRotationRad);
+    const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), extraRotationRad);
 
     if (this.lookAtMode === 'full') {
       // 完全跟相機同姿態（最平行）

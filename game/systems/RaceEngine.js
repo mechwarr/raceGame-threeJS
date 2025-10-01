@@ -488,8 +488,28 @@ export class RaceEngine {
       const severity = (currRank - 5);
       forcedFactor = 1 + stageGain.forcedBoost * Math.max(0, severity);
     }
+    
+    const finalFactor = this.cfg.clamp(rankFactor * posFactor * forcedFactor, 0.25, 3.5);
 
-    return this.cfg.clamp(rankFactor * posFactor * forcedFactor, 0.25, 3.5);
+    // 判斷是否發生了主要的加速行為 (因子大於 1.05 且處於 Lock 階段)
+    const isAccelerating = (finalFactor > 1.05) && (this.lockStage !== this.LOCK_STAGE.None);
+    const isForcedTop5Boost = (inTop5 && currRank > 5);
+
+    if (isAccelerating || isForcedTop5Boost) {
+      // 在 postFinishSpeedUp 模式下，lockStage 可能被強制為 FinishGuard
+      const stageName = this.postFinishSpeedUp ? "PostFinishSpeedUp (Guard)" : this.lockStage;
+      let reason = "";
+      if (isForcedTop5Boost) reason += "【強制前五追趕】";
+      if (eRank > 0 && Math.abs(eRank) > 1) reason += `【名次落後追趕:${eRank}名】`;
+
+      // 避免過度頻繁輸出，只在發生重要加速時輸出
+      if (reason.length > 0) {
+        this.horses[i].player.runSpeedVFX(false);
+        console.log(`[通知] 校正加速：馬匹 ${i + 1} 在 ${stageName} 階段被強制加速。原因: ${reason.trim()}，當前排名: ${currRank}, 目標排名: ${wantRank}。加速倍率: ${finalFactor.toFixed(2)}`);
+      }
+    }
+
+    return finalFactor; // 返回計算出的最終因子
   }
 
   _applySoftSeparation(currentOrderIdx, velocities, desiredRankMap) {
@@ -549,6 +569,8 @@ export class RaceEngine {
       this.sprintState.until[i] = nowSec + dur;
       this.sprintState.usedTimes[i] += 1;
       this.log?.(`[Sprint] ${i + 1} start (dur=${dur.toFixed(2)}s, gap=${gap.toFixed(2)})`);
+      console.log(`[通知] 馬匹 ${i + 1} 啟動衝刺，速度提升！`);
+      this.horses[i].player.runSpeedVFX(false);
     }
   }
   _updateSprintLifecycle(nowSec) {

@@ -210,6 +210,8 @@ export class HorsePlayer {
     
     // 建立新的特效，傳入 this (HorsePlayer 實例)
     this._windFx = new BillboardSequenceEffect(this); 
+
+    console.log("[HorsePlayer] 啟動風特效");
     
     // 假定 BillboardSequenceEffect 有 start/stop 方法來控制動畫播放
     if (this._windFx.start) {

@@ -20,7 +20,7 @@ export class UIController {
   constructor({ mountSelector = '#ui-overlay', hooks, providers, initialView, tickIntervalMs = 300 }){
     this.hooks = hooks || {};
     this.providers = providers || {};
-    this.root = document.querySelector(mountSelector) || this._autoMount();
+    this.root = document.querySelector(mountSelector);
     this.views = new Map();          // key -> ViewClass
     this.active = null;              // { key, instance }
     this.ticker = null;
@@ -55,17 +55,6 @@ export class UIController {
     this._stopTick();
     this._unmountActive();
     this.root.innerHTML = '';
-  }
-
-  // ---- private ----
-  _autoMount(){
-    const d = document.createElement('div');
-    d.id = 'ui-overlay';
-    d.style.position = 'absolute';
-    d.style.right = '12px';
-    d.style.top = '12px';
-    document.body.appendChild(d);
-    return d;
   }
 
   _unmountActive(){
