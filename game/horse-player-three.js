@@ -325,15 +325,37 @@ export class HorsePlayer {
     });
   }
 
-  _applyMapToMaterial(mat, tex) {
-    if (!mat) return;
-    mat.map = tex;
-    if (mat.map) {
-      mat.map.flipY = false;
-      mat.map.colorSpace = THREE.SRGBColorSpace;
+ _applyMapToMaterial(mat, tex, opts = {}) {
+  if (!mat) return;
+
+  mat.map = tex || null;
+
+  if (mat.map) {
+    mat.map.flipY = false;
+    mat.map.colorSpace = THREE.SRGBColorSpace;
+    const useTransparent = opts.transparent !== undefined ? opts.transparent : true;
+    mat.transparent = useTransparent;
+
+    if (useTransparent) {
+      if (typeof opts.alphaTest === 'number') {
+        mat.alphaTest = opts.alphaTest;
+        mat.depthWrite = opts.depthWrite ?? true;
+      } else {
+        mat.alphaTest = 0;
+        mat.depthWrite = opts.depthWrite ?? false;
+      }
+
+      if (opts.doubleSide) mat.side = THREE.DoubleSide;
+      if (opts.premultiplyAlpha) mat.map.premultiplyAlpha = true;
+    } else {
+      mat.alphaTest = 0;
+      mat.depthWrite = true;
+      mat.side = THREE.FrontSide;
     }
-    mat.needsUpdate = true;
   }
+
+  mat.needsUpdate = true;
+}
 
   _join(folder, file) {
     return folder.endsWith("/") ? folder + file : folder + "/" + file;
