@@ -86,9 +86,9 @@ const CAM = {
   SIDE_RUN: { z: 180, h: 60, lerp: 0.18 },
   SIDE_FIN: { x: finishLineX, z: 180, h: 60, lerp: 0.15 },
   AWARD: {
-    ZOOM: 0.3,
-    POS: { x: -50, y: 5, z: 0 }, // y=相機高度；x/z 不再用來決定角度（可忽略）
-    LOOK: { x: 0, y: 6, z: 0 },
+    ZOOM: 0.5,
+    POS: { x: 0, y: 6.5, z: 0 }, // y=相機高度；x/z 不再用來決定角度（可忽略）
+    LOOK: { x: 0, y: 4, z: 0 },
     AZIMUTH_DEG: 90, // ★ 新增：繞頒獎台的水平角度（0=正面，90=右側，-90=左側，180=背面）
     DIST_SCALE: 1.0 // ★ 新增：距離倍率（可微調遠近，預設 1）
   },
@@ -98,7 +98,7 @@ const CAM = {
 const FIXED_DIR = new THREE.Vector3(0, -0.4, -1);
 
 // ===== 頒獎台（在原點、Z 軸展開；視角拉近）=====
-const PODIUM_SCALE = 10.0; // 整體放大倍率
+const PODIUM_SCALE = 8; // 整體放大倍率
 const podiumX = 0, podiumZ = 0;
 // ★ 調整間距讓馬不重疊，仍以原點為中心展開
 const podiumGap = 3.0;
@@ -203,7 +203,7 @@ function placeTop5OnPodium() {
   const top5Numbers = (race?.getFinalRank?.() ?? []).slice(0, 5);
   if (top5Numbers.length === 0) return;
 
-  ensurePodium();
+  //ensurePodium();
 
   for (let k = 0; k < top5Numbers.length; k++) {
     const num = top5Numbers[k];
@@ -214,7 +214,8 @@ function placeTop5OnPodium() {
     const p = hObj.player;
 
     // 對應台階頂面高度
-    const podiumTopY = (podiumHeights[k] * s);
+    //const podiumTopY = (podiumHeights[k] * s);
+    const podiumTopY = 0; // 直接放在地面上
 
     // 🔧 橫向（X）展開；Z 固定在 0（賽道中線）
     const targetX = podiumMidX + (k - 2) * y;
@@ -295,8 +296,8 @@ function createCamera() {
   });
 }
 function applyCameraResize() {
-  const w = Math.min(window.innerWidth * 0.96, 1200);
-  const h = Math.min(window.innerHeight * 0.9, 1200 / (16 / 9));
+  const w = Math.min(window.innerWidth , 1200);
+  const h = Math.min(window.innerHeight , 1200 / (16 / 9));
   renderer?.setSize(w, h, false);
   if (!camera) return;
   camera.aspect = w / h;
@@ -489,7 +490,7 @@ function updateCamera() {
       if (!allArrivedShown) {
         // ★★★ 完賽 → 進頒獎：建台 → 佈馬 → 隱藏其他 → 鏡頭拉近
         const top5Numbers = (race?.getFinalRank?.() ?? []).slice(0, 5);
-        ensurePodium();
+        //ensurePodium();
         placeTop5OnPodium();
         setOnlyTop5Visible(top5Numbers);
         moveCameraToAward();

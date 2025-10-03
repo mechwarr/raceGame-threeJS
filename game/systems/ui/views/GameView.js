@@ -189,7 +189,7 @@ export class GameView {
       5:'#5DADA9',  6:'#24276F',  7:'#B1B1B1',  8:'#C73F39',
       9:'#601E1A', 10:'#355D3E', 11:'#52194E',
     };
-    const SLANT = 14;
+    const SLANT = 10;
 
     this.rankRow.innerHTML = '';
 
@@ -203,11 +203,12 @@ export class GameView {
         width: '22px',
         lineHeight: '22px',
         padding: '0 10px',
-        fontSize: '12px',
+        fontSize: '20px',
         fontWeight: 700,
         color: '#fff',
         background: bg,
         clipPath: `polygon(${SLANT}px 0, 100% 0, calc(100% - ${SLANT}px) 100%, 0 100%)`,
+        textShadow: '1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

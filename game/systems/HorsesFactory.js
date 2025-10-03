@@ -37,7 +37,8 @@ export async function loadHorsesAsync(scene, opts) {
 
     const startPos = new THREE.Vector3(startLineX, 0, laneZ);
     const randX = rand2(startLineX - 100, startLineX);
-    const faceRight = Math.random() < 0.5;
+    //const faceRight = Math.random() < 0.5;
+    const faceRight = 1; // 統一向右
 
     const hp = new HorsePlayer(scene, HORSE_ROOT, HORSE_GLTF, playerNo, {
       textureFolder: HORSE_TEX,

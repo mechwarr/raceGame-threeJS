@@ -7,7 +7,7 @@
   <style>
     html, body { margin:0; height:100%; background:#03060b; color:#fff; font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Noto Sans TC',sans-serif; }
     #stage { position:absolute; inset:0; display:grid; place-items:center; }
-    canvas { width: min(96vw, 1000px); height: auto; max-height: 90vh; border:1px solid #223; border-radius:12px; background:#000; }
+    canvas { width: 100%; height: auto; max-height: 90vh; background:#000; }
     .paused { filter: grayscale(.5) brightness(.85); }
     .banner { position:fixed; left:8px; top:8px; padding:6px 10px; border-radius:8px; font-size:12px; }
     .ok { background:#0a3; color:#fff; }
@@ -33,7 +33,7 @@
 </script>
 </head>
 <body>
-  <!-- <div id="stage"> //狀態顯示訊息區塊  -->
+  <!-- <div id="stage"> -->
     <canvas id="three-canvas"></canvas>
   </div>
   <!--<pre id="log"></pre> // 除錯用訊息區塊 --> 

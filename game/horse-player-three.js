@@ -335,23 +335,6 @@ export class HorsePlayer {
     mat.map.colorSpace = THREE.SRGBColorSpace;
     const useTransparent = opts.transparent !== undefined ? opts.transparent : true;
     mat.transparent = useTransparent;
-
-    if (useTransparent) {
-      if (typeof opts.alphaTest === 'number') {
-        mat.alphaTest = opts.alphaTest;
-        mat.depthWrite = opts.depthWrite ?? true;
-      } else {
-        mat.alphaTest = 0;
-        mat.depthWrite = opts.depthWrite ?? false;
-      }
-
-      if (opts.doubleSide) mat.side = THREE.DoubleSide;
-      if (opts.premultiplyAlpha) mat.map.premultiplyAlpha = true;
-    } else {
-      mat.alphaTest = 0;
-      mat.depthWrite = true;
-      mat.side = THREE.FrontSide;
-    }
   }
 
   mat.needsUpdate = true;

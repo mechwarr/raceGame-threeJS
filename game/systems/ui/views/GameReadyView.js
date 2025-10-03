@@ -17,24 +17,27 @@ export class GameReadyView {
       position: 'fixed',              // 用 fixed 以 viewport 座標精準覆蓋到 canvas 中心
       left: '0px', top: '0px',        // 會由 positionToCanvas() 動態更新
       transform: 'translate(-50%, -50%)',
-      width: '320px', height: '180px', // 先放預設，稍後會依 canvas 1/3 重算
+      
       background: 'rgba(0,0,0,0.6)',
       color: '#fff',
       border: 'none',
       borderRadius: '16px',
       backdropFilter: 'blur(4px)',
       boxShadow: '0 10px 24px rgba(0,0,0,0.35)',
+      
+      // 保持 flex 佈局以置中文字
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
+      
       textAlign: 'center',
-      fontSize: '18px',
       letterSpacing: '0.5px',
       userSelect: 'none',
       cursor: 'pointer',
       zIndex: 10000,
-      padding: '12px',
       pointerEvents: 'auto',
+      whiteSpace: 'nowrap',
+      transition: 'width 0.2s, height 0.2s, font-size 0.2s',
     });
     this.panel.textContent = '等待開始遊戲…';
 
@@ -47,15 +50,34 @@ export class GameReadyView {
       const cx = rect.left + rect.width  / 2;
       const cy = rect.top  + rect.height / 2;
 
-      // 等待面板尺寸：canvas 的 1/3
+      // 等待面板尺寸：
       if (this.panel) {
-        const w = Math.max(260, Math.min(680, Math.round(rect.width  / 3)));
-        const h = Math.max(140, Math.min(360, Math.round(rect.height / 3)));
+        // 1. 寬度比例：Canvas 寬度的 1/3
+        const w = Math.round(rect.width / 3);
+        // 2. 高度比例：根據 16:9 比例計算 (w * 9 / 16)
+        const h = Math.round(w * 9 / 16);
+
+        // 設置合理的最小/最大限制，避免面板過大或過小
+        const minW = 260, maxW = 680;
+        const minH = Math.round(minW * 9 / 16), maxH = Math.round(maxW * 9 / 16);
+        
+        const finalW = Math.max(minW, Math.min(maxW, w));
+        const finalH = Math.max(minH, Math.min(maxH, h));
+
+        // 字體大小：Canvas 寬度的約 1/40，並隨面板寬度縮放
+        const fontSize = Math.max(16, Math.min(32, Math.round(finalW / 18))); 
+        
+        // 內邊距：與字體大小成比例
+        const paddingY = Math.max(8, Math.round(fontSize * 0.75));
+        const paddingX = Math.max(16, Math.round(fontSize * 1.5));
+        
         Object.assign(this.panel.style, {
-          width:  w + 'px',
-          height: h + 'px',
-          left:   cx + 'px',
-          top:    cy + 'px',
+          width:      finalW + 'px',
+          height:     finalH + 'px',
+          left:       cx + 'px',
+          top:        cy + 'px',
+          fontSize:   fontSize + 'px',
+          padding:    `${paddingY}px ${paddingX}px`,
         });
       }
 
