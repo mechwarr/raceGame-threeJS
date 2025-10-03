@@ -156,6 +156,11 @@ export class GameReadyView {
     const tick = () => {
       if (!this.countdownEl) return;
       if (remain > 0) {
+        if (remain <= 10) {
+            this.countdownEl.style.color = '#f00'; // 設定紅色
+        } else {
+            this.countdownEl.style.color = '#fff'; // 保持白色
+        }
         this.countdownEl.textContent = String(remain);
         remain -= 1;
         this._countdownTimer = setTimeout(tick, 1000);
