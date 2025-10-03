@@ -32,8 +32,8 @@ export class GameView {
     // GameID
     this.gameIdSpan = document.createElement('span');
     const getGameId = this.ctx?.providers?.getGameId;
-    this.gameIdSpan.textContent = `GameID: ${getGameId ? getGameId() : '--------'}`;
-    Object.assign(this.gameIdSpan.style, { fontSize: '12px', opacity: '0.95', whiteSpace: 'nowrap' });
+    //this.gameIdSpan.textContent = `GameID: ${getGameId ? getGameId() : '--------'}`;
+    //Object.assign(this.gameIdSpan.style, { fontSize: '12px', opacity: '0.95', whiteSpace: 'nowrap' });
 
     // 排名列（緊貼排版；用負邊距貼合斜邊）
     this.rankRow = document.createElement('div');
@@ -120,7 +120,8 @@ export class GameView {
     Object.assign(this.vol.style, { width: '160px' });
     this.vol.addEventListener('input', ()=> this.ctx.hooks.onVolume?.(Number(this.vol.value)));
 
-    this.bar.append(this.gameIdSpan, this.rankRow, this.soundBtn, this.vol);
+    //this.bar.append(this.gameIdSpan, this.rankRow, this.soundBtn, this.vol);
+    this.bar.append(this.gameIdSpan, this.rankRow, this.soundBtn);
     this.bar.classList.add('top-bar'); // 添加 class 以供 CSS 選擇器使用
 
     // 若能取得 canvas，切為 fixed 並精準貼齊 canvas 上方寬度
@@ -173,7 +174,7 @@ export class GameView {
 
   // ---- private ----
   _syncSoundBtnText(){
-    this.soundBtn.textContent = this._muted ? '🔇 靜音' : '🔊 聲音';
+    this.soundBtn.textContent = this._muted ? '🔇 ' : '🔊 ';
   }
 
   _renderRanking(){
