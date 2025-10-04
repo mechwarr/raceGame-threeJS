@@ -1,5 +1,8 @@
 // GameReadyView：以 three-canvas 的實際座標為基準，置中一個黑底半透明面板（占 canvas 的 1/3）
-// 本版新增：hideWaitingPanel()、startCountdown(secs, onFinish)，並把 API 掛到 window.GameReadyViewAPI
+// 本版：使用 transform: scale() 依「寬度」等比縮放（以 1920 為基準）
+// 新增：倒數字樣也用 scale 依寬度縮放
+// API：window.GameReadyViewAPI = { hideWaitingPanel, startCountdown }
+
 export class GameReadyView {
   mount(root, ctx){
     this.ctx = ctx;
@@ -9,6 +12,17 @@ export class GameReadyView {
     // 取得 canvas；若找不到就退回 root
     this.canvas = document.getElementById('three-canvas') || root;
 
+    // ========== 基準尺寸（在 1920x1080 時的實際大小）==========
+    this._BASE = {
+      panelW: 640,         // 面板寬
+      panelH: 360,         // 面板高（16:9）
+      font: 28,            // 面板字體大小
+      padY: 20,
+      padX: 40,
+      countdownFont: 160,  // 倒數字樣字體大小
+      designW: 1920,       // 以寬度做等比縮放
+    };
+
     /* =========================
        等待面板（可被關閉）
     ==========================*/
@@ -16,7 +30,7 @@ export class GameReadyView {
     Object.assign(this.panel.style, {
       position: 'fixed',              // 用 fixed 以 viewport 座標精準覆蓋到 canvas 中心
       left: '0px', top: '0px',        // 會由 positionToCanvas() 動態更新
-      transform: 'translate(-50%, -50%)',
+      transform: 'translate(-50%, -50%) scale(1)', // 初始 scale=1，之後依寬度更新
       
       background: 'rgba(0,0,0,0.6)',
       color: '#fff',
@@ -24,8 +38,7 @@ export class GameReadyView {
       borderRadius: '16px',
       backdropFilter: 'blur(4px)',
       boxShadow: '0 10px 24px rgba(0,0,0,0.35)',
-      
-      // 保持 flex 佈局以置中文字
+
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -37,57 +50,49 @@ export class GameReadyView {
       zIndex: 10000,
       pointerEvents: 'auto',
       whiteSpace: 'nowrap',
-      transition: 'width 0.2s, height 0.2s, font-size 0.2s',
+
+      // 這裡改成針對 transform 做過渡，縮放更平滑
+      transition: 'transform 0.2s ease',
+      // （不再針對 width/height/font-size 做動態過渡）
     });
+
+    // 先套用「基準尺寸」；實際縮放交給 transform: scale()
+    Object.assign(this.panel.style, {
+      width: `${this._BASE.panelW}px`,
+      height: `${this._BASE.panelH}px`,
+      fontSize: `${this._BASE.font}px`,
+      padding: `${this._BASE.padY}px ${this._BASE.padX}px`,
+    });
+
     this.panel.textContent = '等待開始遊戲…';
 
     // 倒數顯示元素（預設不建立；startCountdown 時才建立）
     this.countdownEl = null;
 
-    // 位置計算（面板 & 倒數共用）
+    // 位置計算（面板 & 倒數共用）— 以「寬度」等比縮放
     this.positionToCanvas = () => {
       const rect = this.canvas.getBoundingClientRect();
       const cx = rect.left + rect.width  / 2;
       const cy = rect.top  + rect.height / 2;
 
-      // 等待面板尺寸：
+      // 依寬度計算 scale（同等寬度縮放）
+      const scaleW = rect.width / this._BASE.designW;
+
+      // 等待面板定位 & 縮放
       if (this.panel) {
-        // 1. 寬度比例：Canvas 寬度的 1/3
-        const w = Math.round(rect.width / 3);
-        // 2. 高度比例：根據 16:9 比例計算 (w * 9 / 16)
-        const h = Math.round(w * 9 / 16);
-
-        // 設置合理的最小/最大限制，避免面板過大或過小
-        const minW = 260, maxW = 680;
-        const minH = Math.round(minW * 9 / 16), maxH = Math.round(maxW * 9 / 16);
-        
-        const finalW = Math.max(minW, Math.min(maxW, w));
-        const finalH = Math.max(minH, Math.min(maxH, h));
-
-        // 字體大小：Canvas 寬度的約 1/40，並隨面板寬度縮放
-        const fontSize = Math.max(16, Math.min(32, Math.round(finalW / 18))); 
-        
-        // 內邊距：與字體大小成比例
-        const paddingY = Math.max(8, Math.round(fontSize * 0.75));
-        const paddingX = Math.max(16, Math.round(fontSize * 1.5));
-        
         Object.assign(this.panel.style, {
-          width:      finalW + 'px',
-          height:     finalH + 'px',
-          left:       cx + 'px',
-          top:        cy + 'px',
-          fontSize:   fontSize + 'px',
-          padding:    `${paddingY}px ${paddingX}px`,
+          left: cx + 'px',
+          top:  cy + 'px',
+          transform: `translate(-50%, -50%) scale(${scaleW})`,
         });
       }
 
-      // 倒數字樣大小：依 canvas 寬做比例
+      // 倒數字樣定位 & 縮放（字體使用基準值，依 scale 視覺縮放）
       if (this.countdownEl) {
-        const fontSize = Math.max(48, Math.min(220, Math.round(rect.width / 6)));
         Object.assign(this.countdownEl.style, {
           left: cx + 'px',
           top:  cy + 'px',
-          fontSize: fontSize + 'px',
+          transform: `translate(-50%, -50%) scale(${scaleW})`,
         });
       }
     };
@@ -135,19 +140,22 @@ export class GameReadyView {
     // 若已存在倒數，先清掉
     this._clearCountdown();
 
-    // 建立倒數元素（置中大字）
+    // 建立倒數元素（置中大字；使用基準字體，視覺縮放交給 transform）
     this.countdownEl = document.createElement('div');
     Object.assign(this.countdownEl.style, {
       position: 'fixed',
       left: '0px',
       top: '0px',
-      transform: 'translate(-50%, -50%)',
+      transform: 'translate(-50%, -50%) scale(1)', // 初始，馬上在 positionToCanvas() 依寬度套 scale
       color: '#fff',
       textShadow: '0 4px 18px rgba(0,0,0,0.55)',
       fontWeight: '800',
       zIndex: 10001,
       pointerEvents: 'none',
       fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Noto Sans TC", sans-serif',
+      fontSize: `${this._BASE.countdownFont}px`,
+      whiteSpace: 'nowrap',
+      transition: 'transform 0.2s ease', // 縮放時更順
     });
     document.body.appendChild(this.countdownEl);
     this.positionToCanvas();
