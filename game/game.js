@@ -343,8 +343,7 @@ function initThree() {
 
   // 6) Audio + UI
   audioSystem = new AudioSystem();
-  audioSystem.addSFX('cheer', '../public/sound/Large Crowd - Shout - Yeah! - Short_5.1.wav');
-  //audioSystem.addSFX('horse_run', '../public/sound/horse_run.mp3');
+  audioSystem.addSFX('cheer', '../public/sound/Large Crowd - Shout - Yeah! - Short_5.1.mp3');
   ui = new UIController({
     providers: {
       getGameId: () => currentGameId,
@@ -500,7 +499,7 @@ function updateCamera() {
         ui?.show?.('finished');
         allArrivedShown = true;
         audioSystem.playSFX('cheer', 1);
-        audioSystem.setBGMVolume(0.5);
+        audioSystem.stopBGM();
         parent?.postMessage?.({
           type: 'game:finished',
           gameId: currentGameId,
@@ -657,7 +656,7 @@ function doStartRace() {
 
   gameState = STATE.Running;
   ui?.show?.('game');
-  audioSystem.loadBGM('../public/sound/Rossini - William Tell Overture (Synths).wav').catch(() => {});
+  audioSystem.loadBGM('../public/sound/Rossini - William Tell Overture (Synths).mp3').catch(() => {});
   audioSystem.setBGMVolume(1.0);
   log('[State] Running | target duration =', RACE.durationSec ? `${RACE.durationSec.toFixed(2)}s` : '(auto)');
 }

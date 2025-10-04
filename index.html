@@ -232,7 +232,7 @@
       const gameId = genGameId12();   // 1) 12 位數字
       //const rank = [1, 2, 3, 4, 5];   // 2) 固定前五名次
       const rank = getRandomRank();    // 2) 隨機前五名次
-      const countdown = 13;            // 3) 倒數 3 秒
+      const countdown = 3;            // 3) 倒數 3 秒
 
       game.StartGame(gameId, rank, countdown);
       refreshUI();
