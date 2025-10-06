@@ -14,7 +14,7 @@ import { mountEditTool } from './systems/EditTool.js';
 
 // 場景/馬匹載入
 import { createRenderer, createScene, setupLights } from './SceneSetup.js';
-import { loadHorsesAsync } from './systems/HorsesFactory.js';
+import { loadHorsesAsync,resetHorsesPositionRandomly } from './systems/HorsesFactory.js';
 
 // ★ 新增：賽跑數值引擎（移動/名次/完賽判定全部在這支）
 import { RaceEngine } from './systems/RaceEngine.js';
@@ -37,6 +37,9 @@ const banner = (msg, ok = true) => {
 };
 
 let currentGameId = '';
+// ★ 新增：暫存開局參數，供 boot 流程完成後使用
+let pendingStartPayload = null;
+
 
 // ===== 狀態機 =====
 const STATE = { Ready: 'Ready', Running: 'Running', Paused: 'Paused', Finished: 'Finished' };
@@ -53,7 +56,7 @@ const finishDetectX = finishLineX - 0.5; // 衝線判定（略早一點）
 
 let gameCam, audioSystem, ui;
 let leader = null;
-let disposed = false;
+let disposed = false; // 追蹤資源是否被徹底清理或尚未初始化
 
 let minLaneZ = +Infinity;
 let maxLaneZ = -Infinity;
@@ -306,8 +309,8 @@ function applyCameraResize() {
 function resize() { applyCameraResize(); }
 window.addEventListener('resize', resize);
 
-// ===== 初始化場景 =====
-function initThree() {
+// ===== 初始化場景 (只處理 THREE.js 物件和 UI) =====
+async function initThree() {
   // 1) Renderer：交給 SceneSetup 建立
   renderer = createRenderer(canvas, {
     antialias: true,
@@ -340,6 +343,22 @@ function initThree() {
     finishLineX,
     laneGap: 22
   });
+  
+  await buildRoadBetween(scene, {
+    startX: startLineX,
+    endX: finishLineX,
+    laneCount,
+    segments: 3,
+    extraSegments: 2,
+    laneGap: 6,
+    baseY: -20,
+    addLaneLines: true,
+    lineThickness: 0.3,
+    lineLength: 100000,
+    lineColor: 0xffffff,
+    lineYOffset: 0.02,
+  });
+
 
   // 6) Audio + UI
   audioSystem = new AudioSystem();
@@ -373,7 +392,7 @@ function initThree() {
   animate();
 }
 
-// ★ 建立 11 匹馬（用 HorsePlayer）
+// ★ 載入馬匹（用 HorsePlayer）
 async function loadHorses() {
   const result = await loadHorsesAsync(scene, {
     laneCount,
@@ -661,54 +680,74 @@ function doStartRace() {
   log('[State] Running | target duration =', RACE.durationSec ? `${RACE.durationSec.toFixed(2)}s` : '(auto)');
 }
 
+// ★★★ 新增：重置狀態並開始新局（不重新載入資源）
+function doResetAndStart(rank, countdown, durationMinSec, durationMaxSec) {
+    // 1. 確保狀態回到 Ready 畫面，清理 Finished 相關狀態
+    if (gameState !== STATE.Ready) {
+        log(`[State] Transition from ${gameState} to Ready for new game.`);
+        gameState = STATE.Ready;
+        ui?.show?.('ready');
+        allArrivedShown = false;
+        leader = null;
+    }
+    
+    // 2. 處理強制名次
+    // 驗證/修正 forcedTop5Rank（1..11，不重複，取前 5）
+    if (Array.isArray(rank) && rank.length >= 5) {
+        const cleaned = [];
+        for (const n of rank) {
+            const v = clamp(n | 0, 1, laneCount);
+            if (!cleaned.includes(v)) cleaned.push(v);
+            if (cleaned.length >= 5) break;
+        }
+        forcedTop5Rank = (cleaned.length === 5) ? cleaned : null;
+        log('[Start] forcedTop5Rank=', forcedTop5Rank ? forcedTop5Rank.join(',') : '(natural)');
+    } else {
+        forcedTop5Rank = null;
+        log('[Start] forcedTop5Rank= (natural)');
+    }
+
+    // 3. 整局時長（可覆寫預設）
+    if (Number.isFinite(durationMinSec)) RACE.durationMinSec = Math.max(10, durationMinSec);
+    if (Number.isFinite(durationMaxSec)) RACE.durationMaxSec = Math.max(RACE.durationMinSec + 1, durationMaxSec);
+    RACE.durationSec = randFloat(RACE.durationMinSec, RACE.durationMaxSec);
+
+
+    // 4. Ready 畫面與倒數（關閉等待面板 → 倒數 → 開始）
+    window.GameReadyViewAPI?.hideWaitingPanel?.();
+
+    const secs = Math.max(0, Math.floor(countdown || 0));
+    if (secs > 0) {
+        playerStandby(secs);
+        window.GameReadyViewAPI?.startCountdown?.(secs, () => doStartRace());
+    } else {
+        doStartRace();
+    }
+}
+
+
 // 訊息 API：host 可帶入 payload { gameid, rank, countdown, durationMinSec, durationMaxSec }
 function onGameStart(gameid, rank, countdown, durationMinSec, durationMaxSec) {
-  if (gameState === STATE.Finished && allArrivedShown) return;
-
-  // ★ 新增：如果目前是暫停狀態，就直接呼叫恢復函式並返回
-  if (gameState === STATE.Paused) {
-    doResumeRace();
-    return;
-  }
-
-  // ★ 僅在遊戲處於 Ready 狀態時才執行完整啟動邏輯
-  if (gameState !== STATE.Ready) return;
-
+  
+  // 1. 處理 Game ID
   if (typeof gameid === 'string' && gameid.trim()) {
     currentGameId = gameid.trim();
-    log(`[Start] use external gameId=${currentGameId}`);
   }
-
-  // 驗證/修正 forcedTop5Rank（1..11，不重複，取前 5）
-  if (Array.isArray(rank) && rank.length >= 5) {
-    const cleaned = [];
-    for (const n of rank) {
-      const v = clamp(n | 0, 1, laneCount);
-      if (!cleaned.includes(v)) cleaned.push(v);
-      if (cleaned.length >= 5) break;
-    }
-    forcedTop5Rank = (cleaned.length === 5) ? cleaned : null;
-    log('[Start] forcedTop5Rank=', forcedTop5Rank ? forcedTop5Rank.join(',') : '(natural)');
-  } else {
-    forcedTop5Rank = null;
+    
+  // ★★★ 關鍵邏輯：如果 disposed=true，表示需要重新初始化資源 (boot) ★★★
+  if (disposed) {
+      log('[Start] Game is disposed. Re-booting resources now...');
+      // 儲存當前參數，讓 boot 完成後自動觸發開局
+      pendingStartPayload = { rank, countdown, durationMinSec, durationMaxSec };
+      // 呼叫 boot() 進行資源初始化
+      boot();
+      return;
   }
-
-  // 整局時長（可覆寫預設）
-  if (Number.isFinite(durationMinSec)) RACE.durationMinSec = Math.max(10, durationMinSec);
-  if (Number.isFinite(durationMaxSec)) RACE.durationMaxSec = Math.max(RACE.durationMinSec + 1, durationMaxSec);
-  RACE.durationSec = randFloat(RACE.durationMinSec, RACE.durationMaxSec);
-
-  // Ready 畫面與倒數（關閉等待面板 → 倒數 → 開始）
-  ui?.show?.('ready');
-  window.GameReadyViewAPI?.hideWaitingPanel?.();
-
-  const secs = Math.max(0, Math.floor(countdown || 0));
-  if (secs > 0) {
-    playerStandby(secs);
-    window.GameReadyViewAPI?.startCountdown?.(secs, () => doStartRace());
-  } else {
-    doStartRace();
-  }
+  
+  resetHorsesPositionRandomly(horses);
+  
+  // 3. 處於 Ready, Running, Finished 狀態時，執行重置並開始新局
+  doResetAndStart(rank, countdown, durationMinSec, durationMaxSec);
 }
 
 // 倒數期間：所有馬 Walk 回到起跑點，剩 1 秒就位
@@ -774,7 +813,7 @@ function onGameEnd() {
   // ★ 清理頒獎台，避免殘留
   destroyPodium();
 
-  disposed = true;
+  disposed = true; // ★★★ 標記為 disposed，下次 onGameStart 會強制 boot ★★★
   window.removeEventListener('message', onMsg);
   window.removeEventListener('resize', resize);
   countdownOverlay?.remove();
@@ -809,35 +848,26 @@ function onMsg(ev) {
 }
 window.addEventListener('message', onMsg);
 
-// ===== 啟動 =====
+// ===== 啟動 (資源初始化流程) =====
+// ★ 移除原有的 IIFE 括號，讓它可以被 onGameStart 重複呼叫，但僅在 disposed=true 時發生
 (async function boot() {
+  if (!disposed && horses.length > 0) {
+      log('[Boot] Resources already loaded. Skipping initialization.');
+      return;
+  }
+    
   try {
     reportProgress(5);
-    initThree();
-    reportProgress(20);
-
-    await buildRoadBetween(scene, {
-      startX: startLineX,
-      endX: finishLineX,
-      laneCount,
-      segments: 3,
-      extraSegments: 2,
-      laneGap: 6,
-      baseY: -20,
-      addLaneLines: true,
-      lineThickness: 0.3,
-      lineLength: 100000,
-      lineColor: 0xffffff,
-      lineYOffset: 0.02,
-    });
-
-    reportProgress(40);
-
-    await loadHorses();
+    await initThree(); // 執行 THREE.js 場景/UI 初始化
+    reportProgress(40); // 進度條調整
+    
+    await loadHorses(); // 載入馬匹模型
     reportProgress(95);
+    
     reportProgress(100);
     reportReady();
     banner('three.js + 馬匹載入完成', true);
+    disposed = false; // 成功啟動，設定 disposed 為 false
 
     // 在 boot() 裡（initThree() 後）
     editTool = mountEditTool(false, {
@@ -846,6 +876,16 @@ window.addEventListener('message', onMsg);
       getDirVec,
       startLineX
     });
+    
+    // ★★★ 新增：檢查是否有待處理的開局指令 ★★★
+    if (pendingStartPayload) {
+        log('[Boot] Found pending start payload. Starting game now.');
+        const p = pendingStartPayload;
+        pendingStartPayload = null; // 清空暫存
+        // 呼叫新的重置並開始流程，因為資源已載入，故可直接開始
+        doResetAndStart(p.rank, p.countdown, p.durationMinSec, p.durationMaxSec);
+    }
+
 
   } catch (e) {
     reportError(e);
@@ -854,5 +894,6 @@ window.addEventListener('message', onMsg);
     if (location.protocol === 'file:') {
       log('提示：請改用本機 HTTP 伺服器（例如 `npx http-server`）。');
     }
+    disposed = true;
   }
 })();
