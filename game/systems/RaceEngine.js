@@ -4,6 +4,8 @@
 // - 在 postFinishSpeedUp 模式下，馬匹速度從 SlowMo 速度平滑加速回正常速度。
 // - 在此模式下，維持名次回授邏輯，以防止超車，確保名次不變。
 // - 重新整理 tick() 函數，使邏輯更清晰。
+// - **【VFX 修正】** 移除舊有 VFX 觸發點，並在 tick() 中加入「最後衝刺/顯著超速」的觸發邏輯。
+// - **【新增】** 引入 _vfxTriggeredOnce 狀態，確保每匹馬在比賽的最後衝刺階段只觸發一次 VFX。
 
 import * as THREE from 'https://unpkg.com/three@0.165.0/build/three.module.js';
 
@@ -64,6 +66,9 @@ export class RaceEngine {
     this.forcedTop5Rank = null;
 
     this._flags = { firstHorseFinished: false };
+    
+    // 【新增狀態】記錄每匹馬是否已在最後衝刺階段觸發過 VFX
+    this._vfxTriggeredOnce = []; 
 
     // ===== 新增：SlowMo 速度快照 / 完賽後加速模式 =====
     this.slowmoSnapshotV = [];     // 在 SlowMo 觸發當幀記錄各馬的速度
@@ -86,6 +91,9 @@ export class RaceEngine {
     this.slowmoSnapshotV = Array(N).fill(null);
     this.postFinishSpeedUp = false;
     this.speedUpStartTime = null;
+    
+    // 【修正點】初始化 VFX 狀態
+    this._vfxTriggeredOnce = Array(N).fill(false); 
   }
 
   // ====== 回合開始 ======
@@ -120,6 +128,9 @@ export class RaceEngine {
     this.postFinishSpeedUp = false;
     this.speedUpStartTime = null;
     this.slowmoSnapshotV = Array(N).fill(null);
+    
+    // 【修正點】重置 VFX 狀態
+    this._vfxTriggeredOnce = Array(N).fill(false);
   }
 
   // ====== 每幀更新（Running / Finished(未全到線)）======
@@ -130,6 +141,7 @@ export class RaceEngine {
    */
   tick(dt, t) {
     const elapsed = this._nowSinceStart(t);
+    const N = this.cfg.laneCount;
 
     // 在 postFinishSpeedUp 模式下，直接以正常時間推進
     let dtScale = 1;
@@ -141,7 +153,6 @@ export class RaceEngine {
           this.SLOWMO.active = true;
           this.SLOWMO.triggeredAt = t;
           // 建立 SlowMo 當幀「速度快照」
-          const N = this.cfg.laneCount;
           for (let i = 0; i < N; i++) {
             const vi = Number.isFinite(this.speedState.v[i]) ? this.speedState.v[i] : this.baseSpeeds[i];
             this.slowmoSnapshotV[i] = this.cfg.clamp(vi, this.SPEED_CONF.vMin, this.SPEED_CONF.vMax);
@@ -186,7 +197,6 @@ export class RaceEngine {
     const xTarget = (isLocking || isPostFinish) ? this._computeShadowTargets(desiredOrder) : null;
 
     // 計算速度
-    const N = this.cfg.laneCount;
     const nextV = Array(N).fill(0);
 
     for (let i = 0; i < N; i++) {
@@ -272,12 +282,54 @@ export class RaceEngine {
     }
 
     if (isLocking || isPostFinish) this._applySoftSeparation(currOrder, nextV, desiredRankMap);
+    
+    // ==========================================================
+    // ★ V F X 新 觸 發 邏 輯 ★
+    // ==========================================================
+    const isFinalSprintPhase = this._inAnyLock() && !this.postFinishSpeedUp; // 處於 LockStrong 或 FinishGuard，但未越線
+    let maxVNotFinished = 0;
+    let vSumNotFinished = 0;
+    let countNotFinished = 0;
 
-    // 套用速度、推進、動畫、越線判定
+    // 1. 計算未完賽馬匹的速度基準 (最大值與平均值)
+    for (let i = 0; i < N; i++) {
+        if (this.finishedTimes[i] == null) {
+            maxVNotFinished = Math.max(maxVNotFinished, nextV[i]);
+            vSumNotFinished += nextV[i];
+            countNotFinished++;
+        }
+    }
+    const avgVNotFinished = countNotFinished > 0 ? vSumNotFinished / countNotFinished : 0;
+    
+    // 2. 套用速度、推進、動畫、越線判定
     let firstJustFinished = false;
     for (let i = 0; i < N; i++) {
       const p = this._getHorse(i); if (!p) continue;
       this.speedState.v[i] = nextV[i];
+
+      // ------------------------------------------------------
+      // VFX 觸發判斷 (位於速度應用前)
+      // ------------------------------------------------------
+      if (this.finishedTimes[i] == null && isFinalSprintPhase && !this._vfxTriggeredOnce[i]) {
+          const v_i = nextV[i];
+          
+          // 條件 A: 速度接近極限 (達到最大速度的 95% 以上)
+          const nearMaxSpeed = v_i >= (this.SPEED_CONF.vMax * 0.95);
+          
+          // 條件 B: 速度顯著快於場上平均 (例如快 8%) 且是場上最快的
+          // 註：這段邏輯可以調整。1.08 和 isLeaderSpeed 確保了它是最頂尖的加速者。
+          const significantlyFaster = v_i > avgVNotFinished * 1.08;
+          const isLeaderSpeed = v_i >= maxVNotFinished;
+          
+          // 判斷是否為「最後衝刺」且「顯著加速/超速」
+          if (nearMaxSpeed && significantlyFaster && isLeaderSpeed) {
+              // 僅在滿足條件時觸發 VFX
+              this.horses[i].player.runSpeedVFX(false);
+              // 【修正點 3】: 設置旗標，確保單場比賽只觸發一次
+              this._vfxTriggeredOnce[i] = true;
+          }
+      }
+      // ------------------------------------------------------
 
       // 1) 當幀的「畫面速度」= 邏輯速度 * 時間縮放（SlowMo等）
       const vVisual = nextV[i] * dtScale;
@@ -336,7 +388,7 @@ export class RaceEngine {
   getCurrentOrderIdx() { return this._computeCurrentOrderIdx(); }
   getSpeedState() { return this.speedState; }
 
-  // ====== 私有工具 ======
+  // ====== 私有工具 (未更動的輔助函式省略，以維持程式碼簡潔) ======
   _getHorse(i) { return this.horses[i]?.player || this.horses[i]; }
   _getHorseX(iOrHorse) {
     const p = (typeof iOrHorse === 'number') ? this._getHorse(iOrHorse) : (iOrHorse?.player || iOrHorse);
@@ -491,24 +543,6 @@ export class RaceEngine {
     
     const finalFactor = this.cfg.clamp(rankFactor * posFactor * forcedFactor, 0.25, 3.5);
 
-    // 判斷是否發生了主要的加速行為 (因子大於 1.05 且處於 Lock 階段)
-    const isAccelerating = (finalFactor > 1.05) && (this.lockStage !== this.LOCK_STAGE.None);
-    const isForcedTop5Boost = (inTop5 && currRank > 5);
-
-    if (isAccelerating || isForcedTop5Boost) {
-      // 在 postFinishSpeedUp 模式下，lockStage 可能被強制為 FinishGuard
-      const stageName = this.postFinishSpeedUp ? "PostFinishSpeedUp (Guard)" : this.lockStage;
-      let reason = "";
-      if (isForcedTop5Boost) reason += "【強制前五追趕】";
-      if (eRank > 0 && Math.abs(eRank) > 1) reason += `【名次落後追趕:${eRank}名】`;
-
-      // 避免過度頻繁輸出，只在發生重要加速時輸出
-      if (reason.length > 0) {
-        this.horses[i].player.runSpeedVFX(false);
-        console.log(`[通知] 校正加速：馬匹 ${i + 1} 在 ${stageName} 階段被強制加速。原因: ${reason.trim()}，當前排名: ${currRank}, 目標排名: ${wantRank}。加速倍率: ${finalFactor.toFixed(2)}`);
-      }
-    }
-
     return finalFactor; // 返回計算出的最終因子
   }
 
@@ -569,8 +603,6 @@ export class RaceEngine {
       this.sprintState.until[i] = nowSec + dur;
       this.sprintState.usedTimes[i] += 1;
       this.log?.(`[Sprint] ${i + 1} start (dur=${dur.toFixed(2)}s, gap=${gap.toFixed(2)})`);
-      console.log(`[通知] 馬匹 ${i + 1} 啟動衝刺，速度提升！`);
-      this.horses[i].player.runSpeedVFX(false);
     }
   }
   _updateSprintLifecycle(nowSec) {
@@ -583,7 +615,7 @@ export class RaceEngine {
     }
   }
 
-  // ===== Rhythm =====
+  // ===== Rhythm (未更動的輔助函式省略) =====
   _initRhythm() {
     const N = this.cfg.laneCount;
     this.rhythmState = {
