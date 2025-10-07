@@ -648,7 +648,7 @@ function animate() {
 
     // 第一名剛抵達 → 轉入 Finished（等待全員到線）
     if (gameState !== STATE.Finished && res.firstHorseJustFinished) {
-      gameState = STATE.FINISHED;
+      gameState = STATE.Finished;
       log('[State] Finished (waiting all horses reach the line)');
     }
   } else if (gameState === STATE.Ready) {
