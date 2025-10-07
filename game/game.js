@@ -14,18 +14,42 @@ import { mountEditTool } from './systems/EditTool.js';
 
 // 場景/馬匹載入
 import { createRenderer, createScene, setupLights } from './SceneSetup.js';
-import { loadHorsesAsync,resetHorsesPositionRandomly } from './systems/HorsesFactory.js';
+import { loadHorsesAsync, resetHorsesPositionRandomly } from './systems/HorsesFactory.js';
 
 // ★ 新增：賽跑數值引擎（移動/名次/完賽判定全部在這支）
 import { RaceEngine } from './systems/RaceEngine.js';
 
+// ★ 移除：不再需要導入 CallBackBridge
+// import { bridge } from './CallBackBridge.js'; 
+
 // ===== 小工具 =====
 const $log = document.getElementById('log');
 const canvas = document.getElementById('three-canvas');
-const log = (...a) => { if ($log) $log.textContent += a.join(' ') + '\n'; console.log(...a); };
-const reportProgress = (v) => parent?.postMessage({ type: 'game:progress', value: v }, '*');
-const reportReady = () => parent?.postMessage({ type: 'game:ready' }, '*');
-const reportError = (e) => parent?.postMessage({ type: 'game:error', error: String(e) }, '*');
+const log = (...a) => {
+  if ($log) $log.textContent += a.join(' ') + '\n';
+  console.log(...a);
+};
+
+// ★ 新增：統一的訊息發送函數 (取代 bridge.send)
+const postToHost = (type, payload = {}) => {
+  const msg = {
+    type: type,
+    payload: payload
+  };
+  // targetOrigin 使用 '*'，因為 Host 端已經過濾 ev.origin
+  window.parent.postMessage(msg, '*'); 
+  log(`[Post] Sent to Host: ${type}`, payload);
+};
+
+// ★ 修改：使用 postToHost() 替換 bridge.send()
+const reportProgress = (v) => postToHost('game:progress', {
+  value: v
+});
+const reportReady = () => postToHost('game:ready');
+const reportError = (e) => postToHost('game:error', {
+  error: String(e)
+});
+
 const banner = (msg, ok = true) => {
 
   return; // 暫時關閉, 避免擋住畫面
@@ -39,10 +63,15 @@ const banner = (msg, ok = true) => {
 let currentGameId = '';
 // ★ 新增：暫存開局參數，供 boot 流程完成後使用
 let pendingStartPayload = null;
-
+let currentPlatformId = 'web'; // ★ 新增：儲存平台 ID
 
 // ===== 狀態機 =====
-const STATE = { Ready: 'Ready', Running: 'Running', Paused: 'Paused', Finished: 'Finished' };
+const STATE = {
+  Ready: 'Ready',
+  Running: 'Running',
+  Paused: 'Paused',
+  Finished: 'Finished'
+};
 let gameState = STATE.Ready;
 
 // ===== 場景物件 / 遊戲資料 =====
@@ -85,13 +114,35 @@ const CAM = {
   FRAMING_BIAS_Y: 0.80,
   FOV_DEG: 55,
   LOOK_AHEAD_MIN: 8,
-  SIDE_READY: { x: startLineX, z: 180, h: 60, lerp: 0.18 },
-  SIDE_RUN: { z: 180, h: 60, lerp: 0.18 },
-  SIDE_FIN: { x: finishLineX, z: 180, h: 60, lerp: 0.15 },
+  SIDE_READY: {
+    x: startLineX,
+    z: 180,
+    h: 60,
+    lerp: 0.18
+  },
+  SIDE_RUN: {
+    z: 180,
+    h: 60,
+    lerp: 0.18
+  },
+  SIDE_FIN: {
+    x: finishLineX,
+    z: 180,
+    h: 60,
+    lerp: 0.15
+  },
   AWARD: {
     ZOOM: 0.5,
-    POS: { x: 0, y: 6.5, z: 0 }, // y=相機高度；x/z 不再用來決定角度（可忽略）
-    LOOK: { x: 0, y: 4, z: 0 },
+    POS: {
+      x: 0,
+      y: 6.5,
+      z: 0
+    }, // y=相機高度；x/z 不再用來決定角度（可忽略）
+    LOOK: {
+      x: 0,
+      y: 4,
+      z: 0
+    },
     AZIMUTH_DEG: 90, // ★ 新增：繞頒獎台的水平角度（0=正面，90=右側，-90=左側，180=背面）
     DIST_SCALE: 1.0 // ★ 新增：距離倍率（可微調遠近，預設 1）
   },
@@ -102,7 +153,8 @@ const FIXED_DIR = new THREE.Vector3(0, -0.4, -1);
 
 // ===== 頒獎台（在原點、Z 軸展開；視角拉近）=====
 const PODIUM_SCALE = 8; // 整體放大倍率
-const podiumX = 0, podiumZ = 0;
+const podiumX = 0,
+  podiumZ = 0;
 // ★ 調整間距讓馬不重疊，仍以原點為中心展開
 const podiumGap = 3.0;
 const podiumHeights = [2.2, 1.7, 1.3, 1.0, 0.8];
@@ -266,11 +318,13 @@ function distanceForViewHeight(viewHeight, fovDeg, minAhead = 0) {
   const d = viewHeight / (2 * Math.tan(fov * 0.5));
   return Math.max(d, minAhead || 0);
 }
+
 function applyVerticalFraming(pos, look) {
   const offsetY = (CAM.VIEW_HEIGHT * 0.5) * CAM.FRAMING_BIAS_Y;
   pos.y += offsetY;
   look.y += offsetY;
 }
+
 function placeWithFixedDir(lookX, eyeH, eyeZ) {
   const d = distanceForViewHeight(CAM.VIEW_HEIGHT, CAM.FOV_DEG, CAM.LOOK_AHEAD_MIN);
   const pos = new THREE.Vector3(lookX, eyeH, eyeZ);
@@ -282,6 +336,7 @@ function placeWithFixedDir(lookX, eyeH, eyeZ) {
     look
   };
 }
+
 function createCamera() {
   const aspect = canvas.clientWidth / canvas.clientHeight || 16 / 9;
   camera = new THREE.PerspectiveCamera(CAM.FOV_DEG, aspect, 0.1, 2000);
@@ -298,15 +353,19 @@ function createCamera() {
     lerp: 0.12,
   });
 }
+
 function applyCameraResize() {
-  const w = Math.min(window.innerWidth , 1200);
-  const h = Math.min(window.innerHeight , 1200 / (16 / 9));
+  const w = Math.min(window.innerWidth, 1200);
+  const h = Math.min(window.innerHeight, 1200 / (16 / 9));
   renderer?.setSize(w, h, false);
   if (!camera) return;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
-function resize() { applyCameraResize(); }
+
+function resize() {
+  applyCameraResize();
+}
 window.addEventListener('resize', resize);
 
 // ===== 初始化場景 (只處理 THREE.js 物件和 UI) =====
@@ -343,7 +402,7 @@ async function initThree() {
     finishLineX,
     laneGap: 22
   });
-  
+
   await buildRoadBetween(scene, {
     startX: startLineX,
     endX: finishLineX,
@@ -519,12 +578,13 @@ function updateCamera() {
         allArrivedShown = true;
         audioSystem.playSFX('cheer', 1);
         audioSystem.stopBGM();
-        parent?.postMessage?.({
-          type: 'game:finished',
+
+        // ★ 修改：使用 postToHost 替換 bridge.send()
+        postToHost('game:finished', {
           gameId: currentGameId,
           results: getRankingLabels(), // 等於 finalRank + 動態（若有）
           top5: getTop5Labels(),
-        }, '*');
+        });
       }
     } else {
       gotoPose(finishLineX, CAM.SIDE_FIN.h, CAM.SIDE_FIN.z, CAM.SIDE_FIN.lerp);
@@ -588,7 +648,7 @@ function animate() {
 
     // 第一名剛抵達 → 轉入 Finished（等待全員到線）
     if (gameState !== STATE.Finished && res.firstHorseJustFinished) {
-      gameState = STATE.Finished;
+      gameState = STATE.FINISHED;
       log('[State] Finished (waiting all horses reach the line)');
     }
   } else if (gameState === STATE.Ready) {
@@ -682,70 +742,75 @@ function doStartRace() {
 
 // ★★★ 新增：重置狀態並開始新局（不重新載入資源）
 function doResetAndStart(rank, countdown, durationMinSec, durationMaxSec) {
-    // 1. 確保狀態回到 Ready 畫面，清理 Finished 相關狀態
-    if (gameState !== STATE.Ready) {
-        log(`[State] Transition from ${gameState} to Ready for new game.`);
-        gameState = STATE.Ready;
-        ui?.show?.('ready');
-        allArrivedShown = false;
-        leader = null;
+  // 1. 確保狀態回到 Ready 畫面，清理 Finished 相關狀態
+  if (gameState !== STATE.Ready) {
+    log(`[State] Transition from ${gameState} to Ready for new game.`);
+    gameState = STATE.Ready;
+    ui?.show?.('ready');
+    allArrivedShown = false;
+    leader = null;
+  }
+
+  // 2. 處理強制名次
+  // 驗證/修正 forcedTop5Rank（1..11，不重複，取前 5）
+  if (Array.isArray(rank) && rank.length >= 5) {
+    const cleaned = [];
+    for (const n of rank) {
+      const v = clamp(n | 0, 1, laneCount);
+      if (!cleaned.includes(v)) cleaned.push(v);
+      if (cleaned.length >= 5) break;
     }
-    
-    // 2. 處理強制名次
-    // 驗證/修正 forcedTop5Rank（1..11，不重複，取前 5）
-    if (Array.isArray(rank) && rank.length >= 5) {
-        const cleaned = [];
-        for (const n of rank) {
-            const v = clamp(n | 0, 1, laneCount);
-            if (!cleaned.includes(v)) cleaned.push(v);
-            if (cleaned.length >= 5) break;
-        }
-        forcedTop5Rank = (cleaned.length === 5) ? cleaned : null;
-        log('[Start] forcedTop5Rank=', forcedTop5Rank ? forcedTop5Rank.join(',') : '(natural)');
-    } else {
-        forcedTop5Rank = null;
-        log('[Start] forcedTop5Rank= (natural)');
-    }
+    forcedTop5Rank = (cleaned.length === 5) ? cleaned : null;
+    log('[Start] forcedTop5Rank=', forcedTop5Rank ? forcedTop5Rank.join(',') : '(natural)');
+  } else {
+    forcedTop5Rank = null;
+    log('[Start] forcedTop5Rank= (natural)');
+  }
 
-    // 3. 整局時長（可覆寫預設）
-    if (Number.isFinite(durationMinSec)) RACE.durationMinSec = Math.max(10, durationMinSec);
-    if (Number.isFinite(durationMaxSec)) RACE.durationMaxSec = Math.max(RACE.durationMinSec + 1, durationMaxSec);
-    RACE.durationSec = randFloat(RACE.durationMinSec, RACE.durationMaxSec);
+  // 3. 整局時長（可覆寫預設）
+  if (Number.isFinite(durationMinSec)) RACE.durationMinSec = Math.max(10, durationMinSec);
+  if (Number.isFinite(durationMaxSec)) RACE.durationMaxSec = Math.max(RACE.durationMinSec + 1, durationMaxSec);
+  RACE.durationSec = randFloat(RACE.durationMinSec, RACE.durationMaxSec);
 
 
-    // 4. Ready 畫面與倒數（關閉等待面板 → 倒數 → 開始）
-    window.GameReadyViewAPI?.hideWaitingPanel?.();
+  // 4. Ready 畫面與倒數（關閉等待面板 → 倒數 → 開始）
+  window.GameReadyViewAPI?.hideWaitingPanel?.();
 
-    const secs = Math.max(0, Math.floor(countdown || 0));
-    if (secs > 0) {
-        playerStandby(secs);
-        window.GameReadyViewAPI?.startCountdown?.(secs, () => doStartRace());
-    } else {
-        doStartRace();
-    }
+  const secs = Math.max(0, Math.floor(countdown || 0));
+  if (secs > 0) {
+    playerStandby(secs);
+    window.GameReadyViewAPI?.startCountdown?.(secs, () => doStartRace());
+  } else {
+    doStartRace();
+  }
 }
 
 
 // 訊息 API：host 可帶入 payload { gameid, rank, countdown, durationMinSec, durationMaxSec }
 function onGameStart(gameid, rank, countdown, durationMinSec, durationMaxSec) {
-  
+
   // 1. 處理 Game ID
   if (typeof gameid === 'string' && gameid.trim()) {
     currentGameId = gameid.trim();
   }
-    
+
   // ★★★ 關鍵邏輯：如果 disposed=true，表示需要重新初始化資源 (boot) ★★★
   if (disposed) {
-      log('[Start] Game is disposed. Re-booting resources now...');
-      // 儲存當前參數，讓 boot 完成後自動觸發開局
-      pendingStartPayload = { rank, countdown, durationMinSec, durationMaxSec };
-      // 呼叫 boot() 進行資源初始化
-      boot();
-      return;
+    log('[Start] Game is disposed. Re-booting resources now...');
+    // 儲存當前參數，讓 boot 完成後自動觸發開局
+    pendingStartPayload = {
+      rank,
+      countdown,
+      durationMinSec,
+      durationMaxSec
+    };
+    // 呼叫 boot() 進行資源初始化
+    boot();
+    return;
   }
-  
+
   resetHorsesPositionRandomly(horses);
-  
+
   // 3. 處於 Ready, Running, Finished 狀態時，執行重置並開始新局
   doResetAndStart(rank, countdown, durationMinSec, durationMaxSec);
 }
@@ -814,8 +879,11 @@ function onGameEnd() {
   destroyPodium();
 
   disposed = true; // ★★★ 標記為 disposed，下次 onGameStart 會強制 boot ★★★
-  window.removeEventListener('message', onMsg);
+
+  // ★ 移除所有原生監聽器
   window.removeEventListener('resize', resize);
+  window.removeEventListener('message', onMsg); // ★ 移除訊息監聽器
+
   countdownOverlay?.remove();
   editTool?.destroy?.();
   ui?.destroy?.();
@@ -825,16 +893,38 @@ function onGameEnd() {
   }
 }
 
-// 訊息處理
+
+// ★★★ 新增/取代：原生 onMsg 函數，負責接收 Host 指令並解析 payload ★★★
 function onMsg(ev) {
+  // 1. 驗證來源：確保是來自 Parent Window
+  if (ev.source !== window.parent) return; 
+
   const msg = ev.data;
-  if (!msg || typeof msg !== 'object') return;
+  // 2. 驗證訊息格式與類型
+  if (!msg || typeof msg !== 'object' || !msg.type || !msg.type.startsWith('host:')) return; 
+
+  const payload = msg.payload || {};
+  log('[Host Msg]', msg.type, payload);
+
   switch (msg.type) {
-    case 'host:start': {
-      const p = msg.payload || {};
-      onGameStart(p.gameid ?? p.gameId, p.rank, p.countdown, p.durationMinSec, p.durationMaxSec);
+    case 'host:config':
+      // payload 包含 Host 發送的 config 與平台 ID
+      if (payload.platformId) {
+        currentPlatformId = payload.platformId;
+        log(`[Config] Platform ID received: ${currentPlatformId}`);
+      }
+      gameCam?.configure(payload);
       break;
-    }
+    case 'host:start':
+      // payload 結構為 { gameId, rank, countdown, durationMinSec, durationMaxSec, ... }
+      onGameStart(
+        payload.gameid ?? payload.gameId, // 兼容 gameid / gameId
+        payload.rank,
+        payload.countdown,
+        payload.durationMinSec,
+        payload.durationMaxSec
+      );
+      break;
     case 'host:pause':
       onGamePause();
       break;
@@ -842,28 +932,33 @@ function onMsg(ev) {
       onGameEnd();
       break;
     case 'camera:config':
-      gameCam?.configure(msg.payload || {});
+      gameCam?.configure(payload);
       break;
   }
 }
+// ★ 註冊原生訊息監聽器
 window.addEventListener('message', onMsg);
+
 
 // ===== 啟動 (資源初始化流程) =====
 // ★ 移除原有的 IIFE 括號，讓它可以被 onGameStart 重複呼叫，但僅在 disposed=true 時發生
 (async function boot() {
   if (!disposed && horses.length > 0) {
-      log('[Boot] Resources already loaded. Skipping initialization.');
-      return;
+    log('[Boot] Resources already loaded. Skipping initialization.');
+    return;
   }
-    
+
   try {
     reportProgress(5);
+    // 不再需要 setupBridgeListeners()
+    // setupBridgeListeners(); 
+
     await initThree(); // 執行 THREE.js 場景/UI 初始化
     reportProgress(40); // 進度條調整
-    
+
     await loadHorses(); // 載入馬匹模型
     reportProgress(95);
-    
+
     reportProgress(100);
     reportReady();
     banner('three.js + 馬匹載入完成', true);
@@ -876,14 +971,14 @@ window.addEventListener('message', onMsg);
       getDirVec,
       startLineX
     });
-    
-    // ★★★ 新增：檢查是否有待處理的開局指令 ★★★
+
+    // ★★★ 檢查是否有待處理的開局指令 ★★★
     if (pendingStartPayload) {
-        log('[Boot] Found pending start payload. Starting game now.');
-        const p = pendingStartPayload;
-        pendingStartPayload = null; // 清空暫存
-        // 呼叫新的重置並開始流程，因為資源已載入，故可直接開始
-        doResetAndStart(p.rank, p.countdown, p.durationMinSec, p.durationMaxSec);
+      log('[Boot] Found pending start payload. Starting game now.');
+      const p = pendingStartPayload;
+      pendingStartPayload = null; // 清空暫存
+      // 呼叫新的重置並開始流程，因為資源已載入，故可直接開始
+      doResetAndStart(p.rank, p.countdown, p.durationMinSec, p.durationMaxSec);
     }
 
 

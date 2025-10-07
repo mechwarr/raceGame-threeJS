@@ -1,11 +1,13 @@
 // iframe-game-core.js
 // 核心：可重用的 Iframe 小遊戲 Instance（非模組；依賴 window.IframeGameUtils）
-// API：Create / StartGame / PauseGame / DisposeGame、state、onStateChange()
+// API：Create / StartGame / PauseGame / DisposeGame、state、onStateChange()、onGameMessage()
 // 設計重點：
 // - 可在 Create 傳入 { width }：固定 16:9，高度自算，之後不再變動；不傳則 RWD。
 // - 建立後先下發 host:config（預設 1920×1080 渲染）。
 // - loadingRefs 仍支援：overlay/bar/text。
 // - readyTimeoutMs（預設 1500ms）：超時自動 ready；設 0 代表必須等子頁回 game:ready。
+// ★ 統一橋接：IframeGame 負責所有訊息收發和分發，移除 Iframe 內的 CallBackBridge 依賴。
+// ★ 新增：支援 platformId 平台判斷規格。
 
 ;(function (global) {
   const U = global.IframeGameUtils || {};
@@ -16,9 +18,9 @@
   /** @typedef {'idle'|'initializing'|'ready'|'running'|'paused'|'destroyed'} GameState */
 
   /** @typedef {Object} StartOptions
-   *  @property {string=} gameId     // 遊戲識別碼
-   *  @property {number[]=} rank     // 例如 [3,5,1,7,2]（1~11）
-   *  @property {number=} countdown  // 倒數秒數（整數）
+   * @property {string=} gameId     // 遊戲識別碼
+   * @property {number[]=} rank     // 例如 [3,5,1,7,2]（1~11）
+   * @property {number=} countdown  // 倒數秒數（整數）
    */
 
   let instanceCounter = 0;
@@ -34,6 +36,8 @@
      * @param {Object=} options.loadingRefs     { overlay, bar, text }
      * @param {number=} options.width           固定寬度（px），強制 16:9；不傳則 RWD
      * @param {number=} options.readyTimeoutMs  等待 game:ready 超時（預設 1500；0=不自動 ready）
+     * @param {string=} options.platformId      平台識別碼（預設 'web'） ★ 平台判斷規格
+     * @param {function(string, Object)=} options.onGameMessage 接收來自 Iframe 的自定義訊息 (type, payload)
      */
     constructor({
       container,
@@ -44,6 +48,8 @@
       loadingRefs,
       width,
       readyTimeoutMs = 1500,
+      platformId = 'web', 
+      onGameMessage, // ★ 新增：用於處理 game:finished 等自定義訊息
     } = {}) {
       if (!container) throw new Error('IframeGame: 必須提供 container');
 
@@ -57,25 +63,47 @@
       this.loadingRefs = loadingRefs || {};
       this._fixedWidth = typeof width === 'number' && width > 0 ? Math.floor(width) : null;
       this.readyTimeoutMs = typeof readyTimeoutMs === 'number' ? readyTimeoutMs : 1500;
-
+      this._platformId = typeof platformId === 'string' && platformId.trim() ? platformId.trim() : 'web'; // ★ 儲存平台識別碼
+      
+      this._onGameMessage = typeof onGameMessage === 'function' ? onGameMessage : null; // ★ 儲存外部回呼
+      this._onMessage = this._onMessage.bind(this);
+      
       // 狀態
       /** @type {GameState} */
       this._state = 'idle';
       this._iframe = null;
-      this._onMessage = this._onMessage.bind(this);
       this._onStateChange = null;
       this._awaitReadyResolve = null;
       this._destroyed = false;
+      
+      // 檢查 IframeGameUtils 是否提供 postToGame，如果沒有，就實作一個
+      if (typeof U.postToGame !== 'function') {
+         U.postToGame = (iframeWindow, msg, targetOrigin) => {
+             if (iframeWindow && iframeWindow.postMessage) {
+                 iframeWindow.postMessage(msg, targetOrigin);
+             }
+         }
+      }
     }
 
     /** 目前狀態（唯讀） */
     get state() {
       return this._state;
     }
-
+    
+    /** 平台識別碼（唯讀） */
+    get platformId() {
+      return this._platformId;
+    }
+    
     /** 註冊狀態變更回呼（用於 UI 狀態顯示等） */
     onStateChange(cb) {
       this._onStateChange = cb;
+    }
+    
+    /** 註冊 Iframe 傳來的自定義訊息回呼 (例如 game:finished) */
+    onGameMessage(cb) {
+        this._onGameMessage = cb;
     }
 
     _setState(s) {
@@ -124,7 +152,16 @@
       });
 
       // 下發 host:config（預設 1920×1080；若固定寬則讓子頁鎖定渲染解析度）
-      U.postToGame(iframe.contentWindow, U.defaultHostConfig(!!this._fixedWidth), this.targetOrigin);
+      // ★ 變更：將 platformId 納入 config payload 以符合平台判斷規格
+      const configPayload = U.defaultHostConfig(!!this._fixedWidth);
+      if (!configPayload.payload) {
+          configPayload.payload = {};
+      }
+      configPayload.payload.platformId = this._platformId; // 注入 platformId
+      
+      // ★ 使用統一的 postToGame 呼叫（格式為 { type, payload }）
+      U.postToGame(iframe.contentWindow, configPayload, this.targetOrigin);
+
 
       // 等待 ready：超時自動 ready（readyTimeoutMs=0 則不自動）
       await new Promise((resolve) => {
@@ -169,7 +206,8 @@
       }
 
       const payload = {};
-      if (typeof opt.gameId === 'string') payload.gameId = opt.gameId;
+      // 兼容 gameid / gameId
+      if (typeof opt.gameId === 'string') payload.gameId = opt.gameId; 
       if (Array.isArray(opt.rank)) payload.rank = opt.rank;
       if (typeof opt.countdown === 'number') payload.countdown = opt.countdown;
 
@@ -183,7 +221,7 @@
       if (!['ready', 'paused'].includes(this._state)) return;
 
       const payload = this._normalizeStartArgs(arguments);
-      // 傳給子頁（game.js 會讀取 payload.gameId / payload.rank / payload.countdown）
+      // ★ 使用統一的 postToGame 呼叫（格式為 { type, payload }）
       U.postToGame(this._iframe.contentWindow, { type: 'host:start', payload }, this.targetOrigin);
 
       // 維持既有行為：立刻把容器側狀態設為 running（子頁會自行倒數後開跑）
@@ -194,7 +232,8 @@
     PauseGame() {
       this._assertNotDestroyed();
       if (!this._iframe) throw new Error('尚未建立遊戲');
-      U.postToGame(this._iframe.contentWindow, { type: 'host:pause' }, this.targetOrigin);
+      // ★ 使用統一的 postToGame 呼叫（格式為 { type, payload }）
+      U.postToGame(this._iframe.contentWindow, { type: 'host:pause', payload: {} }, this.targetOrigin);
       this._setState('paused');
     }
 
@@ -202,11 +241,19 @@
     DisposeGame() {
       this._assertNotDestroyed();
       if (this._iframe) {
-        U.postToGame(this._iframe.contentWindow, { type: 'host:end' }, this.targetOrigin);
+        // ★ 使用統一的 postToGame 呼叫（格式為 { type, payload }）
+        U.postToGame(this._iframe.contentWindow, { type: 'host:end', payload: {} }, this.targetOrigin);
       }
       this._teardown();
       this._setState('destroyed');
       this._destroyed = true;
+    }
+    
+    /** 傳送自定義指令給 Iframe */
+    postCommand(type, payload = {}) {
+        this._assertNotDestroyed();
+        if (!this._iframe) return;
+        U.postToGame(this._iframe.contentWindow, { type, payload }, this.targetOrigin);
     }
 
     /** 取得狀態快照（debug 方便） */
@@ -217,6 +264,7 @@
         hasIframe: !!this._iframe,
         src: this.src || '(srcdoc demo)',
         fixedWidth: this._fixedWidth,
+        platformId: this._platformId, // ★ 顯示平台 ID
       };
     }
 
@@ -225,13 +273,17 @@
     _onMessage(ev) {
       if (this.targetOrigin !== '*' && ev.origin !== this.targetOrigin) return;
       const msg = ev.data;
-      if (!msg || typeof msg !== 'object') return;
+      // 訊息格式必須符合 { type: string, payload: object }
+      if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string' || !msg.type.startsWith('game:')) return;
 
+      const payload = msg.payload || {};
+      
+      // 處理核心 IframeGame 狀態訊息
       switch (msg.type) {
         case 'game:progress': {
-          const p = Number(msg.value) || 0;
+          const p = Number(payload.value) || 0;
           U.setProgress(this.loadingRefs, Math.max(0, Math.min(100, p)));
-          break;
+          return;
         }
         case 'game:ready': {
           U.setProgress(this.loadingRefs, 100);
@@ -241,12 +293,21 @@
             this._awaitReadyResolve();
             this._awaitReadyResolve = null;
           }
-          break;
+          return;
         }
         case 'game:error': {
-          console.error('[Game Error]', msg.error);
-          break;
+          console.error('[Game Error]', payload.error);
+          return;
         }
+      }
+      
+      // ★ 處理所有其他自定義訊息 (例如 game:finished, game:ranking)
+      if (typeof this._onGameMessage === 'function') {
+          try {
+              this._onGameMessage(msg.type, payload);
+          } catch (e) {
+              console.error(`[IframeGame] Error in onGameMessage handler for type ${msg.type}:`, e);
+          }
       }
     }
 
