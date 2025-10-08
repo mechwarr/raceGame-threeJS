@@ -16,7 +16,7 @@ export class GameReadyView {
     this._BASE = {
       panelW: 640,         // 面板寬
       panelH: 360,         // 面板高（16:9）
-      font: 28,            // 面板字體大小
+      font: 56,            // 面板字體大小
       padY: 20,
       padX: 40,
       countdownFont: 160,  // 倒數字樣字體大小
