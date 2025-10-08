@@ -1,9 +1,9 @@
-// iframe-game-core.js (Uploaded Version)
+// iframe-game-core.js (Modified Version)
 // 核心：可重用的 Iframe 小遊戲 Instance（非模組；依賴 window.IframeGameUtils）
 // API：Create / StartGame / PauseGame / DisposeGame、state、onStateChange()
 // 設計重點：
 // - 可在 Create 傳入 { width }：固定 16:9，高度自算，之後不再變動；不傳則 RWD。
-// - 建立後先下發 host:config（預設 1920×1080 渲染）。
+// - 建立後先下發 game:config（預設 1920×1080 渲染）。
 // - loadingRefs 仍支援：overlay/bar/text。
 // - readyTimeoutMs（預設 1500ms）：超時自動 ready；設 0 代表必須等子頁回 game:ready。
 
@@ -132,8 +132,9 @@
         );
       });
 
-      // 下發 host:config（預設 1920×1080；若固定寬則讓子頁鎖定渲染解析度）
-      U.postToGame(iframe.contentWindow, U.defaultHostConfig(!!this._fixedWidth), this.targetOrigin);
+      // 下發 game:config（預設 1920×1080；若固定寬則讓子頁鎖定渲染解析度）
+      // 【修改點 1】：host:config -> game:config
+      U.postToGame(this._iframe.contentWindow, { type: 'game:config', payload: U.defaultHostConfig(!!this._fixedWidth) }, this.targetOrigin);
 
       // 等待 ready：超時自動 ready（readyTimeoutMs=0 則不自動）
       await new Promise((resolve) => {
@@ -192,8 +193,8 @@
       if (!['ready', 'paused'].includes(this._state)) return;
 
       const payload = this._normalizeStartArgs(arguments);
-      // 傳給子頁（game.js 會讀取 payload.gameId / payload.rank / payload.countdown）
-      U.postToGame(this._iframe.contentWindow, { type: 'host:start', payload }, this.targetOrigin);
+      // 【修改點 2】：host:start -> game:start
+      U.postToGame(this._iframe.contentWindow, { type: 'game:start', payload }, this.targetOrigin);
 
       // 維持既有行為：立刻把容器側狀態設為 running（子頁會自行倒數後開跑）
       this._setState('running');
@@ -203,7 +204,8 @@
     PauseGame() {
       this._assertNotDestroyed();
       if (!this._iframe) throw new Error('尚未建立遊戲');
-      U.postToGame(this._iframe.contentWindow, { type: 'host:pause', payload: {} }, this.targetOrigin); // 加上 payload: {} 以符合新的 Iframe 接收格式
+      // 【修改點 3】：host:pause -> game:pause
+      U.postToGame(this._iframe.contentWindow, { type: 'game:pause', payload: {} }, this.targetOrigin); 
       this._setState('paused');
     }
 
@@ -211,7 +213,8 @@
     DisposeGame() {
       this._assertNotDestroyed();
       if (this._iframe) {
-        U.postToGame(this._iframe.contentWindow, { type: 'host:end', payload: {} }, this.targetOrigin); // 加上 payload: {} 以符合新的 Iframe 接收格式
+        // 【修改點 4】：host:end -> game:end
+        U.postToGame(this._iframe.contentWindow, { type: 'game:end', payload: {} }, this.targetOrigin); 
       }
       this._teardown();
       this._setState('destroyed');

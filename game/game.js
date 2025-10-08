@@ -901,13 +901,15 @@ function onMsg(ev) {
 
   const msg = ev.data;
   // 2. 驗證訊息格式與類型
-  if (!msg || typeof msg !== 'object' || !msg.type || !msg.type.startsWith('host:')) return; 
+  // 【修改點 5】：host: -> game:
+  if (!msg || typeof msg !== 'object' || !msg.type || !msg.type.startsWith('game:')) return; 
 
   const payload = msg.payload || {};
   log('[Host Msg]', msg.type, payload);
 
+  // 【修改點 6】：修改 switch 內的 case
   switch (msg.type) {
-    case 'host:config':
+    case 'game:config': // Changed from host:config
       // payload 包含 Host 發送的 config 與平台 ID
       if (payload.platformId) {
         currentPlatformId = payload.platformId;
@@ -915,7 +917,7 @@ function onMsg(ev) {
       }
       gameCam?.configure(payload);
       break;
-    case 'host:start':
+    case 'game:start': // Changed from host:start
       // payload 結構為 { gameId, rank, countdown, durationMinSec, durationMaxSec, ... }
       onGameStart(
         payload.gameid ?? payload.gameId, // 兼容 gameid / gameId
@@ -925,10 +927,10 @@ function onMsg(ev) {
         payload.durationMaxSec
       );
       break;
-    case 'host:pause':
+    case 'game:pause': // Changed from host:pause
       onGamePause();
       break;
-    case 'host:end':
+    case 'game:end': // Changed from host:end
       onGameEnd();
       break;
     case 'camera:config':

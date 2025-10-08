@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Iframe 賽馬小遊戲 — 極簡載體 (PostMessage 控制)</title>
+  <title>Iframe 賽馬小遊戲 — 極簡載體 (Native Bridge 控制)</title>
   <style>
     body {
       margin: 0;
@@ -61,10 +61,9 @@
   <div id="game-root" aria-label="遊戲容器">
     </div>
   
-  <!-- <pre id="console-log"></pre> -->
-
   <script src="./frameCore/iframe-game-utils.js"></script>
   <script src="./frameCore/iframe-game-core.js"></script>
+  <script src="./game/systems/NativeBridge.js"></script>
   <script src="./demoGame.js"></script>
 
   <script>
@@ -105,74 +104,108 @@
         return numbers.slice(0, 5);
     }
     
-    // ★★★ 核心：監聽外部 PostMessage 指令 (唯一的控制方式) ★★★
-    function onHostCommand(event) {
-        // 確保來源是來自同一個 window
-        if (event.source !== window || event.origin !== window.location.origin) return;
-
-        const msg = event.data;
-        if (!msg || typeof msg !== 'object' || !msg.type || !msg.type.startsWith('cmd:')) return;
+    // ★★★ 核心：初始化 NativeBridge ★★★
+    const bridge = new NativeBridge({
+        debug: true,
+        // Host 作為容器，這裡的 targetOrigin 是給 postMessage 發送給 iFrame 用
+        targetOrigin: window.location.origin, 
+        callbackTimeout: 5000 
+    });
+    
+    // ★★★ 設定 Bridge 監聽器 (取代 onHostCommand) ★★★
+    function setupBridgeListeners() {
+        // 確保不重複監聽，且舊的監聽邏輯可以被移除（如果不是在 onStateChange 裡調用，這裡可能需要更複雜的清除機制）
         
         const game = RaceGame.GetGame();
         if (!game) {
-            hostLog('[Host Cmd] 遊戲尚未建立或已銷毀，指令無效:', msg.type);
+            hostLog('[Host Cmd] 遊戲尚未建立或已銷毀，指令監聽無效。');
             return;
         }
-
-        hostLog(`[Host Cmd] 收到指令: ${msg.type}`, msg.payload);
         
-        switch (msg.type) {
-            case 'cmd:start':
-                const payload = msg.payload || {};
-                const gameId = payload.gameId || genGameId12(); 
-                const rank = payload.rank || getRandomRank(); 
-                const countdown = payload.countdown ?? 3;
-                
-                game.StartGame(gameId, rank, countdown);
-                break;
+        // 1. 監聽來自 Native 的開始指令 (game:start)
+        // 備註：Native App 應該調用 NativeBridge 的接口，例如 iOS: window.receiveNativeMessage({ action: 'game:start', data: { rank: [...] } })
+        bridge.on('game:start', (payload, originalMessage) => {
+            hostLog(`[Native Cmd] 收到開始指令: game:start`, payload);
+            
+            // 如果 Native 端期望回應，則發送回覆
+            if (originalMessage?.id) {
+                bridge.reply(originalMessage, { success: true, message: 'Game start command received and executing.' });
+            }
 
-            case 'cmd:pause':
-                game.PauseGame();
-                break;
+            const gameId = payload.gameId || genGameId12(); 
+            const rank = payload.rank || getRandomRank(); 
+            const countdown = payload.countdown ?? 3;
+            
+            // 調用 IframeGame 實例的方法
+            game.StartGame({ gameId, rank, countdown });
+        });
 
-            case 'cmd:end':
-                game.DisposeGame();
-                // 結束後可以選擇自動重啟
-                hostLog('[Host Cmd] 遊戲結束並銷毀。準備重新建立...');
-                autoCreateGame(); 
-                break;
-        }
+        // 2. 監聽來自 Native 的暫停指令 (game:pause)
+        bridge.on('game:pause', (payload, originalMessage) => {
+            hostLog(`[Native Cmd] 收到暫停指令: game:pause`);
+            if (originalMessage?.id) {
+                bridge.reply(originalMessage, { success: true, message: 'Game pause command received.' });
+            }
+            game.PauseGame();
+        });
+
+        // 3. 監聽來自 Native 的結束指令 (game:end)
+        bridge.on('game:end', (payload, originalMessage) => {
+            hostLog(`[Native Cmd] 收到結束指令: game:end`);
+            if (originalMessage?.id) {
+                bridge.reply(originalMessage, { success: true, message: 'Game end command received.' });
+            }
+            game.DisposeGame();
+            
+            // 結束後可以選擇自動重啟
+            hostLog('[Host Cmd] 遊戲結束並銷毀。準備重新建立...');
+            // 注意：這裡 autoCreateGame 會建立新的 IframeGame 實例
+            autoCreateGame(); 
+        });
+
+        // 4. 監聽 Iframe 回覆的完賽訊息 (game:finished)，並回傳給 Native
+        bridge.on('game:finished', (payload) => {
+             hostLog(`[Native Cmd] Iframe 遊戲完賽通知: game:finished`, payload);
+             // 如果 Native App 需要知道完賽結果，可以將此訊息再次發送給 Native
+             // 這裡使用 send() 呼叫 Native 方法 (例如 Native App 有個 onGameFinished 接口)
+             bridge.send('native:gameFinished', { gameId: payload.gameId, top5: payload.top5 });
+        });
+        
+        hostLog('[Init] Native Bridge 監聽器設定完成。');
     }
-    window.addEventListener('message', onHostCommand);
 
 
-    // ★★★ 核心：自動建立遊戲 ★★★
+    // ★★★ 核心：自動建立遊戲 (修改 onStateChange 確保 Native Bridge 監聽器正確註冊) ★★★
     async function autoCreateGame() {
         hostLog('[Init] 正在自動建立遊戲...');
         
-        // 移除 loadingRefs 參數，因為相關 DOM 元素已不存在
-        await RaceGame.Create({
+        // 注意：這裡移除了原版 index2.html 中的 window.removeEventListener('message', onHostCommand);
+        // 因為我們已經改用 NativeBridge 處理外部指令。
+        
+        const gameInstance = await RaceGame.Create({
             container: root,
             src: './game/game.html',
             targetOrigin: window.location.origin,
-            platformId: 'MINIMAL_HOST', // 設定平台 ID
+            platformId: bridge.getPlatform(), // 使用 bridge 偵測到的平台 ID
             sandbox: 'allow-scripts allow-same-origin',
             attributes: { allow: 'fullscreen; gamepad; xr-spatial-tracking; autoplay' },
-            // loadingRefs 已移除
             onGameMessage: (type, payload) => {
                 hostLog(`[Game Event] ${type} | State: ${RaceGame.GetGame()?.state}`, payload);
+                // Iframe 發送的訊息，我們也用 Bridge 轉發（例如給上層 Native 的通用 onAll 處理）
+                if (type && type.startsWith('game:')) {
+                     // 這裡使用 bridge.on('game:finished') 來處理更合適，因此這裡不重複發送
+                }
             },
             onStateChange: (state) => {
                 hostLog(`[State Change] Host State -> ${state}`);
-                // 在 ready 時可以提示用戶發送 postMessage 開始遊戲
                 if (state === 'ready') {
-                     hostLog('----- 遊戲已就緒 (Ready)! -----');
-                     hostLog('請在 Console 執行指令開始遊戲:');
-                     hostLog("window.postMessage({ type: 'cmd:start', payload: { rank: [1,2,3,4,5], countdown: 3 } }, '*')");
+                    // 遊戲 iframe 準備好後，設定 Native Bridge 監聽器
+                    setupBridgeListeners();
                 }
             }
         });
         hostLog('[Init] 遊戲容器建立完成。等待 Iframe 內部資源載入...');
+        return gameInstance;
     }
     
     // 頁面載入後自動執行
