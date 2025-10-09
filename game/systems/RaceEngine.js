@@ -428,7 +428,7 @@ export class RaceEngine {
     this.finishedTimes[i] = t;
     const horseNo = i + 1;
     this.finalRank.push(horseNo);
-    this.log?.(`[Finish] ${horseNo}`);
+    //this.log?.(`[Finish] ${horseNo}`);
   }
 
   _getLeaderProgress() {
@@ -602,7 +602,7 @@ export class RaceEngine {
       this.sprintState.active[i] = true;
       this.sprintState.until[i] = nowSec + dur;
       this.sprintState.usedTimes[i] += 1;
-      this.log?.(`[Sprint] ${i + 1} start (dur=${dur.toFixed(2)}s, gap=${gap.toFixed(2)})`);
+      //this.log?.(`[Sprint] ${i + 1} start (dur=${dur.toFixed(2)}s, gap=${gap.toFixed(2)})`);
     }
   }
   _updateSprintLifecycle(nowSec) {
@@ -610,7 +610,7 @@ export class RaceEngine {
       if (this.sprintState.active[i] && nowSec >= this.sprintState.until[i]) {
         this.sprintState.active[i] = false;
         this.sprintState.lastEndAt[i] = nowSec;
-        this.log?.(`[Sprint] ${i + 1} end`);
+        //this.log?.(`[Sprint] ${i + 1} end`);
       }
     }
   }

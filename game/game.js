@@ -639,15 +639,10 @@ const RACE = {
 };
 
 function doStartRace() {
-  // ★★★ 新局前清理：移除頒獎台＋顯示全部馬
-  destroyPodium();
-  showAllHorses();
-
   // 回到起跑點＋面向右
   for (let i = 0; i < laneCount; i++) {
     const hObj = horses[i];
     if (!hObj?.player) continue;
-
     hObj.player.group.position.copy(hObj.startPos);
     setHorseRot(i, true);
   }
@@ -674,9 +669,22 @@ function doStartRace() {
   log('[State] Running | target duration =', RACE.durationSec ? `${RACE.durationSec.toFixed(2)}s` : '(auto)');
 }
 
-// ★★★ 新增：重置狀態並開始新局（不重新載入資源）
-function doResetAndStart(rank, countdown, durationMinSec, durationMaxSec) {
-  // 1. 確保狀態回到 Ready 畫面，清理 Finished 相關狀態
+// 小工具：把 GameReadyView 的倒數 callback 轉成 Promise
+function startCountdownAsync(secs) {
+  return new Promise((resolve) => {
+    const start = window.GameReadyViewAPI?.startCountdown;
+    if (typeof start === 'function') {
+      start(secs, () => resolve());
+    } else {
+      // 若沒有倒數模組，就直接略過
+      resolve();
+    }
+  });
+}
+
+// ★★★ 改成 async：重置狀態並開始新局（不重新載入資源）
+async function doResetAndStart(rank, countdown, durationMinSec, durationMaxSec) {
+  // 1) 回到 Ready 並清理
   if (gameState !== STATE.Ready) {
     log(`[State] Transition from ${gameState} to Ready for new game.`);
     gameState = STATE.Ready;
@@ -685,8 +693,7 @@ function doResetAndStart(rank, countdown, durationMinSec, durationMaxSec) {
     leader = null;
   }
 
-  // 2. 處理強制名次
-  // 驗證/修正 forcedTop5Rank（1..11，不重複，取前 5）
+  // 2) 強制名次處理
   if (Array.isArray(rank) && rank.length >= 5) {
     const cleaned = [];
     for (const n of rank) {
@@ -700,27 +707,35 @@ function doResetAndStart(rank, countdown, durationMinSec, durationMaxSec) {
     forcedTop5Rank = null;
     log('[Start] forcedTop5Rank= (natural)');
   }
-  
-  audioSystem?.stopBGM();
-  audioSystem?.stopAllSFX();
 
-  // 3. 整局時長（可覆寫預設）
+  // 2.5) 停掉聲音（若有 async 版本可改用 await audioSystem.stopBGMAsync()）
+  audioSystem?.stopBGM?.();
+  audioSystem?.stopAllSFX?.();
+
+  // 3) 整局時長
   if (Number.isFinite(durationMinSec)) RACE.durationMinSec = Math.max(10, durationMinSec);
   if (Number.isFinite(durationMaxSec)) RACE.durationMaxSec = Math.max(RACE.durationMinSec + 1, durationMaxSec);
   RACE.durationSec = randFloat(RACE.durationMinSec, RACE.durationMaxSec);
 
+  // ★★★ 新局前清理：移除頒獎台＋顯示全部馬
+  destroyPodium();
+  showAllHorses();
 
-  // 4. Ready 畫面與倒數（關閉等待面板 → 倒數 → 開始）
+  await resetHorsesPositionRandomly(horses);
+
+  // 4) 倒數 → 開始（可 await）
   window.GameReadyViewAPI?.hideWaitingPanel?.();
-
+  
   const secs = Math.max(0, Math.floor(countdown || 0));
   if (secs > 0) {
-    playerStandby(secs);
-    window.GameReadyViewAPI?.startCountdown?.(secs, () => doStartRace());
-  } else {
-    doStartRace();
+    playerStandby(secs);              // 準備走位（同步）
+    await startCountdownAsync(secs);  // 等倒數結束
   }
+
+  // 開跑（你現有的 doStartRace 是同步；若想等 BGM 載入，可把 doStartRace 改 async 並在這裡 await）
+  doStartRace();
 }
+
 
 
 // 訊息 API：host 可帶入 payload { gameid, rank, countdown, durationMinSec, durationMaxSec }
@@ -745,8 +760,6 @@ function onGameStart(gameid, rank, countdown, durationMinSec, durationMaxSec) {
     boot();
     return;
   }
-
-  resetHorsesPositionRandomly(horses);
 
   // 3. 處於 Ready, Running, Finished 狀態時，執行重置並開始新局
   doResetAndStart(rank, countdown, durationMinSec, durationMaxSec);

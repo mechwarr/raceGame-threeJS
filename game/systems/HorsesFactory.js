@@ -113,7 +113,7 @@ export async function loadHorsesAsync(scene, opts) {
  * @param {Array<{player: HorsePlayer, startPos: THREE.Vector3, laneZ: number, faceRight: boolean|number, minRandX: number, maxRandX: number, initialRandX: number}>} horses
  * @returns {void}
  */
-export function resetHorsesPositionRandomly(horses) {
+export async function resetHorsesPositionRandomly(horses) {
   horses.forEach(horse => {
     if (!horse.player) return; // 避免 player 載入失敗
 
@@ -136,6 +136,7 @@ export function resetHorsesPositionRandomly(horses) {
     const targetObject = horse.player.group || horse.player.mesh;
     if (targetObject) {
       targetObject.position.copy(newPos);
+      //console.log(`Horse ${horse.player.playerNo} reset to Pos:`, targetObject.position);
     }
 
     // 4. 重置旋轉
@@ -145,8 +146,6 @@ export function resetHorsesPositionRandomly(horses) {
 
     // 5. 重置動畫為 Idle (使用隨機時間開始)
     horse.player.playIdle01(true, 0, 0.5, Math.random());
-
-    // console.log(`Horse ${horse.player.playerNo} reset to Pos:`, newPos);
   });
 
   console.log(`Reset positions for ${horses.length} horses to initial random positions.`);
