@@ -693,18 +693,6 @@ const RACE = {
   durationSec: null, // Running → 第一名過線的時間
 };
 
-// ★ 新增：處理從暫停狀態恢復遊戲的函式
-function doResumeRace() {
-  if (gameState !== STATE.Paused) {
-    return;
-  }
-  gameState = STATE.Running;
-  // ★ 調用 AudioSystem 的恢復方法
-  audioSystem.onGameResumed();
-  ui?.show?.('game');
-  log('[State] Resumed');
-}
-
 function doStartRace() {
   // ★★★ 新局前清理：移除頒獎台＋顯示全部馬
   destroyPodium();
@@ -766,6 +754,9 @@ function doResetAndStart(rank, countdown, durationMinSec, durationMaxSec) {
     forcedTop5Rank = null;
     log('[Start] forcedTop5Rank= (natural)');
   }
+  
+  audioSystem?.stopBGM();
+  audioSystem?.stopAllSFX();
 
   // 3. 整局時長（可覆寫預設）
   if (Number.isFinite(durationMinSec)) RACE.durationMinSec = Math.max(10, durationMinSec);

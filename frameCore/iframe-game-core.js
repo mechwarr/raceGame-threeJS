@@ -190,7 +190,6 @@
     StartGame(gameIdOrOptions, rank, countdown) {
       this._assertNotDestroyed();
       if (!this._iframe) throw new Error('尚未建立遊戲');
-      if (!['ready', 'paused'].includes(this._state)) return;
 
       const payload = this._normalizeStartArgs(arguments);
       // 【修改點 2】：host:start -> game:start
