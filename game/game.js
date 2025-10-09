@@ -162,59 +162,6 @@ let podiumGroup = null; // ★★★ 頒獎台群組
 // 置中到賽道中段（X 軸）
 const podiumMidX = (startLineX + finishLineX) * 0.5;
 
-
-// ★★★ 建立頒獎台幾何（原點附近）
-// — 規格：5 座台階，Z 軸依序 [-2, -1, 0, +1, +2]*gap 展開；高度乘以 PODIUM_SCALE
-function ensurePodium() {
-  if (podiumGroup && podiumGroup.parent) return podiumGroup;
-
-  const s = PODIUM_SCALE;
-  podiumGroup = new THREE.Group();
-  podiumGroup.name = 'PodiumGroup';
-
-  const baseSizeX = 2.2 * s; // 台面寬（X）
-  const baseSizeZ = 2.2 * s; // 台面深（Z）
-
-  // 🔧 將「x 軸的排列間距」改為變數 y（你要的命名）
-  const y = podiumGap * s; // ← 橫向（X）間距，變數名叫 y
-
-  const mats = [
-    new THREE.MeshStandardMaterial({
-      color: 0xf6d15a
-    }),
-    new THREE.MeshStandardMaterial({
-      color: 0xc0c0c0
-    }),
-    new THREE.MeshStandardMaterial({
-      color: 0xcd7f32
-    }),
-    new THREE.MeshStandardMaterial({
-      color: 0x8fa3b0
-    }),
-    new THREE.MeshStandardMaterial({
-      color: 0x8fb08f
-    }),
-  ];
-
-  for (let k = 0; k < 5; k++) {
-    const h = podiumHeights[k] * s;
-    const geo = new THREE.BoxGeometry(baseSizeX, h, baseSizeZ);
-    const mesh = new THREE.Mesh(geo, mats[k % mats.length]);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-
-    // 🔧 原本是 Z 軸展開；改成 X 軸展開，Z 固定在賽道中線 0
-    //    中心往左右排開：..., -2y, -1y, 0, +1y, +2y
-    mesh.position.set(podiumMidX + (k - 2) * y, h * 0.5, 0);
-    mesh.name = `Podium_${k + 1}`;
-    podiumGroup.add(mesh);
-  }
-
-  scene.add(podiumGroup);
-  return podiumGroup;
-}
-
-
 // ★★★ 移除頒獎台（新局前清理）
 function destroyPodium() {
   if (!podiumGroup) return;
@@ -258,7 +205,6 @@ function placeTop5OnPodium() {
   const top5Numbers = (race?.getFinalRank?.() ?? []).slice(0, 5);
   if (top5Numbers.length === 0) return;
 
-  //ensurePodium();
 
   for (let k = 0; k < top5Numbers.length; k++) {
     const num = top5Numbers[k];
@@ -567,7 +513,6 @@ function updateCamera() {
       if (!allArrivedShown) {
         // ★★★ 完賽 → 進頒獎：建台 → 佈馬 → 隱藏其他 → 鏡頭拉近
         const top5Numbers = (race?.getFinalRank?.() ?? []).slice(0, 5);
-        //ensurePodium();
         placeTop5OnPodium();
         setOnlyTop5Visible(top5Numbers);
         moveCameraToAward();
@@ -702,6 +647,7 @@ function doStartRace() {
   for (let i = 0; i < laneCount; i++) {
     const hObj = horses[i];
     if (!hObj?.player) continue;
+
     hObj.player.group.position.copy(hObj.startPos);
     setHorseRot(i, true);
   }
@@ -964,16 +910,6 @@ window.addEventListener('message', onMsg);
       getDirVec,
       startLineX
     });
-
-    // ★★★ 檢查是否有待處理的開局指令 ★★★
-    if (pendingStartPayload) {
-      log('[Boot] Found pending start payload. Starting game now.');
-      const p = pendingStartPayload;
-      pendingStartPayload = null; // 清空暫存
-      // 呼叫新的重置並開始流程，因為資源已載入，故可直接開始
-      doResetAndStart(p.rank, p.countdown, p.durationMinSec, p.durationMaxSec);
-    }
-
 
   } catch (e) {
     reportError(e);
