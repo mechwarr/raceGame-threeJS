@@ -41,12 +41,24 @@ const postToHost = (type, payload = {}) => {
   log(`[Post] Sent to Host: ${type}`, payload);
 };
 
+const postStateChange = (newState) => {
+  postToHost('ingame:state', {
+    state: newState,
+  });
+};
+
+function setGameState(newState) {
+  if (gameState === newState) return;
+  const prevState = gameState;
+  gameState = newState;
+  postStateChange(newState);
+}
+
 // ★ 修改：使用 postToHost() 替換 bridge.send()
-const reportProgress = (v) => postToHost('game:progress', {
+const reportProgress = (v) => postToHost('ingame:progress', {
   value: v
 });
-const reportReady = () => postToHost('game:ready');
-const reportError = (e) => postToHost('game:error', {
+const reportError = (e) => postToHost('ingame:error', {
   error: String(e)
 });
 
@@ -67,12 +79,13 @@ let currentPlatformId = 'web'; // ★ 新增：儲存平台 ID
 
 // ===== 狀態機 =====
 const STATE = {
+  init: 'init',
   Ready: 'Ready',
   Running: 'Running',
   Paused: 'Paused',
   Finished: 'Finished'
 };
-let gameState = STATE.Ready;
+let gameState = STATE.init;
 
 // ===== 場景物件 / 遊戲資料 =====
 let renderer, scene, camera, clock;
@@ -525,7 +538,7 @@ function updateCamera() {
         audioSystem.stopBGM();
 
         // ★ 修改：使用 postToHost 替換 bridge.send()
-        postToHost('game:finished', {
+        postToHost('ingame:ended', {
           gameId: currentGameId,
           results: getRankingLabels(), // 等於 finalRank + 動態（若有）
           top5: getTop5Labels(),
@@ -593,7 +606,7 @@ function animate() {
 
     // 第一名剛抵達 → 轉入 Finished（等待全員到線）
     if (gameState !== STATE.Finished && res.firstHorseJustFinished) {
-      gameState = STATE.Finished;
+      setGameState(STATE.Finished);
       log('[State] Finished (waiting all horses reach the line)');
     }
   } else if (gameState === STATE.Ready) {
@@ -662,7 +675,7 @@ function doStartRace() {
   // 交由 RaceEngine 管理整局參數（包含 SlowMo/Lock/Sprint/Rhythm/完賽表）
   race.startRace(clock.elapsedTime, forcedTop5Rank, RACE.durationSec);
 
-  gameState = STATE.Running;
+  setGameState(STATE.Running);
   ui?.show?.('game');
   audioSystem.loadBGM('../public/sound/Rossini - William Tell Overture (Synths).mp3').catch(() => {});
   audioSystem.setBGMVolume(1.0);
@@ -687,7 +700,7 @@ async function doResetAndStart(rank, countdown, durationMinSec, durationMaxSec) 
   // 1) 回到 Ready 並清理
   if (gameState !== STATE.Ready) {
     log(`[State] Transition from ${gameState} to Ready for new game.`);
-    gameState = STATE.Ready;
+    setGameState(STATE.Ready);
     ui?.show?.('ready');
     allArrivedShown = false;
     leader = null;
@@ -809,7 +822,7 @@ function playerStandby(secs) {
 
 function onGamePause() {
   if (gameState === STATE.Running) {
-    gameState = STATE.Paused;
+    setGameState(STATE.Paused);
     // ★ 調用 AudioSystem 的暫停方法
     audioSystem.onGamePaused();
     log('[State] Paused');
@@ -867,7 +880,7 @@ function onMsg(ev) {
       }
       gameCam?.configure(payload);
       break;
-    case 'game:start': // Changed from host:start
+    case 'game:start':
       // payload 結構為 { gameId, rank, countdown, durationMinSec, durationMaxSec, ... }
       onGameStart(
         payload.gameid ?? payload.gameId, // 兼容 gameid / gameId
@@ -877,10 +890,10 @@ function onMsg(ev) {
         payload.durationMaxSec
       );
       break;
-    case 'game:pause': // Changed from host:pause
+    case 'game:pause':
       onGamePause();
       break;
-    case 'game:end': // Changed from host:end
+    case 'game:ended': 
       onGameEnd();
       break;
     case 'camera:config':
@@ -912,9 +925,10 @@ window.addEventListener('message', onMsg);
     reportProgress(95);
 
     reportProgress(100);
-    reportReady();
     banner('three.js + 馬匹載入完成', true);
     disposed = false; // 成功啟動，設定 disposed 為 false
+    console.log('%c[Boot] Initialization completed.', 'color:green');
+    setGameState(STATE.Ready);
 
     // 在 boot() 裡（initThree() 後）
     editTool = mountEditTool(false, {

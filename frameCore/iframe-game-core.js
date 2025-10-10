@@ -5,9 +5,8 @@
 // - 可在 Create 傳入 { width }：固定 16:9，高度自算，之後不再變動；不傳則 RWD。
 // - 建立後先下發 game:config（預設 1920×1080 渲染）。
 // - loadingRefs 仍支援：overlay/bar/text。
-// - readyTimeoutMs（預設 1500ms）：超時自動 ready；設 0 代表必須等子頁回 game:ready。
 
-;(function (global) {
+; (function (global) {
   const U = global.IframeGameUtils || {};
   if (!U.applyIframeAttributes) {
     throw new Error('[IframeGame] 請先載入 iframe-game-utils.js');
@@ -33,7 +32,7 @@
      * @param {Object=} options.attributes
      * @param {Object=} options.loadingRefs     { overlay, bar, text }
      * @param {number=} options.width           固定寬度（px），強制 16:9；不傳則 RWD
-     * @param {number=} options.readyTimeoutMs  等待 game:ready 超時（預設 1500；0=不自動 ready）
+     * @param {number=} options.readyTimeoutMs 
      */
     constructor({
       container,
@@ -66,14 +65,14 @@
       this._onStateChange = null;
       this._awaitReadyResolve = null;
       this._destroyed = false;
-      
+
       // 確保 U.postToGame 存在 (針對舊版，防止 utils 檔案遺漏)
       if (typeof U.postToGame !== 'function') {
-         U.postToGame = (iframeWindow, msg, targetOrigin) => {
-             if (iframeWindow && iframeWindow.postMessage) {
-                 iframeWindow.postMessage(msg, targetOrigin);
-             }
-         }
+        U.postToGame = (iframeWindow, msg, targetOrigin) => {
+          if (iframeWindow && iframeWindow.postMessage) {
+            iframeWindow.postMessage(msg, targetOrigin);
+          }
+        }
       }
     }
 
@@ -92,7 +91,7 @@
       if (typeof this._onStateChange === 'function') {
         try {
           this._onStateChange(s);
-        } catch (_) {}
+        } catch (_) { }
       }
     }
 
@@ -204,7 +203,7 @@
       this._assertNotDestroyed();
       if (!this._iframe) throw new Error('尚未建立遊戲');
       // 【修改點 3】：host:pause -> game:pause
-      U.postToGame(this._iframe.contentWindow, { type: 'game:pause', payload: {} }, this.targetOrigin); 
+      U.postToGame(this._iframe.contentWindow, { type: 'game:pause', payload: {} }, this.targetOrigin);
       this._setState('paused');
     }
 
@@ -212,8 +211,8 @@
     DisposeGame() {
       this._assertNotDestroyed();
       if (this._iframe) {
-        // 【修改點 4】：host:end -> game:end
-        U.postToGame(this._iframe.contentWindow, { type: 'game:end', payload: {} }, this.targetOrigin); 
+        // 【修改點 4】：host:end -> game:ended
+        U.postToGame(this._iframe.contentWindow, { type: 'game:ended', payload: {} }, this.targetOrigin);
       }
       this._teardown();
       this._setState('destroyed');
@@ -237,27 +236,31 @@
       if (this.targetOrigin !== '*' && ev.origin !== this.targetOrigin) return;
       const msg = ev.data;
       if (!msg || typeof msg !== 'object') return;
-      
+
       const payload = msg.payload || {}; // 舊版可能沒有 payload，這裡修正一下
 
       switch (msg.type) {
-        case 'game:progress': {
+        case 'ingame:progress': {
           // 修正：舊版 msg.value，新版 msg.payload.value
-          const p = Number(msg.value || payload.value) || 0; 
+          const p = Number(msg.value || payload.value) || 0;
           U.setProgress(this.loadingRefs, Math.max(0, Math.min(100, p)));
           break;
         }
-        case 'game:ready': {
-          U.setProgress(this.loadingRefs, 100);
-          U.showLoading(this.loadingRefs, false);
-          this._setState('ready');
-          if (this._awaitReadyResolve) {
-            this._awaitReadyResolve();
-            this._awaitReadyResolve = null;
+        case 'ingame:state': {
+          const s = payload.state;
+          this._setState(s);
+
+          if (s === 'ready') {
+            U.setProgress(this.loadingRefs, 100);
+            U.showLoading(this.loadingRefs, false);
+            if (this._awaitReadyResolve) {
+              this._awaitReadyResolve();
+              this._awaitReadyResolve = null;
+            }
           }
           break;
         }
-        case 'game:error': {
+        case 'ingame:error': {
           console.error('[Game Error]', msg.error || payload.error); // 修正：兼容 error
           break;
         }
@@ -267,7 +270,7 @@
     _teardown() {
       global.removeEventListener('message', this._onMessage);
       if (this._iframe) {
-        try { this._iframe.src = 'about:blank'; } catch {}
+        try { this._iframe.src = 'about:blank'; } catch { }
         this._iframe.remove();
         this._iframe = null;
       }
