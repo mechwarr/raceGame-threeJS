@@ -23,6 +23,30 @@ export class GameReadyView {
       designW: 1920,       // 以寬度做等比縮放
     };
 
+    // ========== 共用面板樣式：等待面板與倒數面板共用這些視覺樣式 ==========
+    this._PANEL_STYLE = {
+      background: 'rgba(0,0,0,0.6)',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '16px',
+      backdropFilter: 'blur(4px)',
+      boxShadow: '0 10px 24px rgba(0,0,0,0.35)',
+
+      // 讓子內容（文字）置中
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      
+      textAlign: 'center',
+      letterSpacing: '0.5px',
+      userSelect: 'none',
+      zIndex: 10000,
+      whiteSpace: 'nowrap',
+
+      // 這裡改成針對 transform 做過渡，縮放更平滑
+      transition: 'transform 0.2s ease',
+    };
+
     /* =========================
        等待面板（可被關閉）
     ==========================*/
@@ -32,28 +56,10 @@ export class GameReadyView {
       left: '0px', top: '0px',        // 會由 positionToCanvas() 動態更新
       transform: 'translate(-50%, -50%) scale(1)', // 初始 scale=1，之後依寬度更新
       
-      background: 'rgba(0,0,0,0.6)',
-      color: '#fff',
-      border: 'none',
-      borderRadius: '16px',
-      backdropFilter: 'blur(4px)',
-      boxShadow: '0 10px 24px rgba(0,0,0,0.35)',
-
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
+      pointerEvents: 'auto', // 讓等待面板可互動（如點擊關閉，雖然目前沒有實作）
+      cursor: 'pointer',     // 加上指標，表示可互動
       
-      textAlign: 'center',
-      letterSpacing: '0.5px',
-      userSelect: 'none',
-      cursor: 'pointer',
-      zIndex: 10000,
-      pointerEvents: 'auto',
-      whiteSpace: 'nowrap',
-
-      // 這裡改成針對 transform 做過渡，縮放更平滑
-      transition: 'transform 0.2s ease',
-      // （不再針對 width/height/font-size 做動態過渡）
+      ...this._PANEL_STYLE, // 匯入共用樣式
     });
 
     // 先套用「基準尺寸」；實際縮放交給 transform: scale()
@@ -140,36 +146,51 @@ export class GameReadyView {
     // 若已存在倒數，先清掉
     this._clearCountdown();
 
-    // 建立倒數元素（置中大字；使用基準字體，視覺縮放交給 transform）
+    // 建立倒數元素（現在它是一個包含大字的面板）
     this.countdownEl = document.createElement('div');
     Object.assign(this.countdownEl.style, {
       position: 'fixed',
       left: '0px',
       top: '0px',
       transform: 'translate(-50%, -50%) scale(1)', // 初始，馬上在 positionToCanvas() 依寬度套 scale
+      
+      // 匯入共用面板樣式
+      ...this._PANEL_STYLE,
+      
+      // 倒數面板的尺寸與等待面板一致
+      width: `${this._BASE.panelW}px`,
+      height: `${this._BASE.panelH}px`,
+      
+      // 其他專屬於倒數的樣式
       color: '#fff',
       textShadow: '0 4px 18px rgba(0,0,0,0.55)',
       fontWeight: '800',
       zIndex: 10001,
       pointerEvents: 'none',
       fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Noto Sans TC", sans-serif',
-      fontSize: `${this._BASE.countdownFont}px`,
-      whiteSpace: 'nowrap',
-      transition: 'transform 0.2s ease', // 縮放時更順
+      fontSize: `${this._BASE.countdownFont}px`, // 使用更大的倒數字體大小
     });
+    
     document.body.appendChild(this.countdownEl);
     this.positionToCanvas();
 
     let remain = total;   // 3 → 2 → 1 → GO
     const tick = () => {
       if (!this.countdownEl) return;
+      
+      // 設定倒數文字
+      let text = '';
+      let color = '#fff';
+      
       if (remain > 0) {
+        text = String(remain);
         if (remain <= 10) {
-            this.countdownEl.style.color = '#f00'; // 設定紅色
-        } else {
-            this.countdownEl.style.color = '#fff'; // 保持白色
+            color = '#f00'; // 剩下 10 秒以內用紅色
         }
-        this.countdownEl.textContent = String(remain);
+        
+        this.countdownEl.textContent = text;
+        this.countdownEl.style.color = color;
+        
         remain -= 1;
         this._countdownTimer = setTimeout(tick, 1000);
       } else {
