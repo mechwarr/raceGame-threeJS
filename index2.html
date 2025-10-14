@@ -126,7 +126,7 @@
       // 1. 監聽來自 Native 的開始指令 (game:start)
       // 備註：Native App 應該調用 NativeBridge 的接口，例如 iOS: window.receiveNativeMessage({ action: 'game:start', data: { rank: [...] } })
       bridge.on('game:start', (payload, originalMessage) => {
-        hostLog(`[Native Cmd] 收到開始指令: game:start`, payload);
+        console.log(`[Native Cmd] 收到開始指令: game:start`, payload);
 
         // 如果 Native 端期望回應，則發送回覆
         if (originalMessage?.id) {
@@ -162,34 +162,6 @@
         hostLog('[Host Cmd] 遊戲結束並銷毀。');
       });
 
-      // 4. 監聽 Iframe 回覆的完賽訊息 (ingame:ended)，並回傳給 Native
-      bridge.on('ingame:ended', (payload) => {
-        hostLog(`[Native Cmd] Iframe 遊戲完賽通知: ingame:ended`, payload);
-        // 如果 Native App 需要知道完賽結果，可以將此訊息再次發送給 Native
-        // 這裡使用 send() 呼叫 Native 方法 (例如 Native App 有個 onGameFinished 接口)
-        bridge.send('game:ended', { gameId: payload.gameId, results: payload.results ,top5: payload.top5 });
-      });
-
-      // 5. 監聽 Iframe 回覆的遊戲狀態變更 (game:state)，並回傳給 Native
-      bridge.on('ingame:state', (payload) => {
-        hostLog(`[Native Cmd] Iframe 遊戲狀態變更通知: game:state`, payload);
-        // 轉發給 Native，例如 Native App 有個 onGameStateChange 接口
-        // payload: { state: 'Ready'|'Running'|'Paused'|'Finished', gameId: '...' }
-        bridge.send('game:state', { state: payload.state });
-      });
-
-      // 6. 監聽 Iframe 回覆的遊戲狀態變更 (game:progress)，並回傳給 Native
-      bridge.on('ingame:progress', (payload) => {
-        hostLog(`[Native Cmd] Iframe 遊戲狀態變更通知: game:progress`, payload);
-        bridge.send('game:progress', { value: payload.value });
-      });
-      
-      // 7. 監聽 Iframe 回覆的錯誤訊息 (ingame:error)，並回傳給 Native
-      bridge.on('ingame:error', (payload) => {
-        hostLog(`[Native Cmd] Iframe 錯誤通知: ingame:error`, payload);
-        bridge.send('game:error', { error: payload.error });
-      });
-      
       hostLog('[Init] Native Bridge 監聽器設定完成。');
     }
 
@@ -215,20 +187,54 @@
             // 這裡使用 bridge.on('game:finished') 來處理更合適，因此這裡不重複發送
           }
         },
-        onStateChange: (state) => {
-          hostLog(`[State Change] Host State -> ${state}`);
-          if (state === 'ready') {
-            // 遊戲 iframe 準備好後，設定 Native Bridge 監聽器
-            setupBridgeListeners();
-          }
-        }
       });
+      setupBridgeListeners();
       hostLog('[Init] 遊戲容器建立完成。等待 Iframe 內部資源載入...');
       return gameInstance;
     }
 
+    // ★★★ 新增：原生訊息監聽器，專門處理來自 iFrame 的 ingame:* 訊息 ★★★
+    function handleIframeToNativeBridge(ev) {
+      const gameInstance = RaceGame.GetGame();
+
+      // 1. 驗證來源：確保訊息是來自我們建立的 iFrame
+      // 如果遊戲尚未建立或訊息來源不是 iFrame，則忽略
+      if (!gameInstance || ev.source !== gameInstance._iframe?.contentWindow) return;
+
+      const msg = ev.data;
+      // 2. 驗證訊息格式：必須是物件、有 type 屬性，且是 iFrame 發出的 ingame: 類型
+      if (!msg || typeof msg !== 'object' || !msg.type || !msg.type.startsWith('ingame:')) return;
+
+      const payload = msg.payload || {};
+      hostLog(`[IFRAME > NativeBridge] 收到並轉發訊息: ${msg.type}`, payload);
+
+      // 3. 根據訊息類型，轉發給 Native App (使用 bridge.send)
+      switch (msg.type) {
+        case 'ingame:state':
+          // 轉發遊戲狀態變更給 Native
+          bridge.send('game:state', { state: payload.state });
+          break;
+
+        case 'ingame:ended':
+          // 轉發完賽結果給 Native
+          bridge.send('game:ended', { gameId: payload.gameId, results: payload.results, top5: payload.top5 });
+          break;
+
+        case 'ingame:progress':
+          // 轉發進度給 Native
+          bridge.send('game:progress', { value: payload.value });
+          break;
+
+        case 'ingame:error':
+          // 轉發錯誤給 Native
+          bridge.send('game:error', { error: payload.error });
+          break;
+      }
+    }
+
     // 頁面載入後自動執行
     window.addEventListener('load', autoCreateGame);
+    window.addEventListener('message', handleIframeToNativeBridge);
 
   </script>
 </body>
