@@ -51,7 +51,7 @@ export class GameView {
 
     // 聲音按鈕
     this.soundBtn = document.createElement('button');
-    this._muted = false;
+    this._muted = ctx.providers.getIsMuted();
     this._syncSoundBtnText();
     // 樣式改由 _updateLayoutAndStyles 動態設定
     Object.assign(this.soundBtn.style, {

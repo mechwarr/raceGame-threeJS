@@ -2,7 +2,7 @@
 // 新增：右上角加入一個正方形、等比縮放的 TopBar（包含聲音按鈕）
 export class FinishedView {
   mount(root, ctx) {
-    this.ctx = ctx;
+    this.ctx = ctx; // 將 ctx 賦值給實例變數
     this.root = root;
     this.canvas = document.getElementById('three-canvas') || root;
 
@@ -11,10 +11,10 @@ export class FinishedView {
     this.GAP_PERCENT = 2;            // 錦旗之間的 gap（% of panel width）
     this.ITEMS = 5;                  // 錦旗數量（最多 5）
     // 每個錦旗容器的寬度百分比（平均分配）
-    this.ITEM_WIDTH_PERCENT = (100 - (this.ITEMS - 1) * this.GAP_PERCENT) / this.ITEMS; // 例如 18.4%
+    this.ITEM_WIDTH_PERCENT = (100 - (this.ITEMS - 1) * this.GAP_PERCENT) / this.ITEMS;
 
     // 呼叫初始化 TopBar 的邏輯
-    this._initTopBar();
+    this._initTopBar(); // 在此方法中將使用 this.ctx
 
     // 中央面板：固定定位、置中；大小在 _positionToCanvas 依 16:9 計算
     this.panel = document.createElement('div');
@@ -156,10 +156,24 @@ export class FinishedView {
 
   // ---- TopBar 相關方法 (正方形、高佔 10%、右上角) ----
 
+  /**
+   * 取得靜音狀態 (boolean)
+   */
+  _getIsMuted() {
+      const getIsMuted = this.ctx?.providers?.getIsMuted;
+      if (typeof getIsMuted === 'function') {
+          return getIsMuted();
+      }
+      return false; // 安全預設：非靜音
+  }
+
   _initTopBar() {
     // 聲音按鈕
     this.soundBtn = document.createElement('button');
-    this._muted = false;
+    
+    // ★ 修正：從 this.ctx 取得初始狀態
+    this._muted = this._getIsMuted();
+    
     this._syncSoundBtnText();
 
     Object.assign(this.soundBtn.style, {
@@ -174,9 +188,17 @@ export class FinishedView {
       padding: '0',
       fontFamily: 'sans-serif'
     });
+    
     this.soundBtn.addEventListener('click', () => {
-      this._muted = !this._muted;
-      this.ctx.hooks.onMute?.(this._muted);
+      // 1. 從內部狀態取得當前狀態（FinishedView是靜態畫面，沒有onTick同步，所以用內部狀態即可）
+      const currentIsMuted = this._muted;
+      const nextIsMuted = !currentIsMuted;
+      
+      // 2. 通知 Hook 變更狀態
+      this.ctx.hooks.onMute?.(nextIsMuted);
+      
+      // 3. 立即更新內部狀態和 UI (假設 hook 呼叫後會成功變更)
+      this._muted = nextIsMuted;
       this._syncSoundBtnText();
     });
 
@@ -212,14 +234,15 @@ export class FinishedView {
     // 2. 計算所有衍生尺寸
     const btnSize = barSize * 0.75; // 按鈕大小
     const btnFontSize = barSize * 0.5; // 按鈕圖示大小
-    const barPadding = barSize * 0.125; // TopBar 離 canvas 邊界的間距
+    // const barPadding = barSize * 0.125; // TopBar 離 canvas 邊界的間距
 
     // 3. 應用樣式到 TopBar (定位在右上角)
     Object.assign(this.bar.style, {
       width: `${barSize}px`, // 寬度等於高度，變為正方形
       height: `${barSize}px`,
 
-      right: `${rect.left}px`,
+      // 精準定位到 canvas 右上角（right / top 都是從 rect 算的邊界）
+      right: `${document.body.clientWidth - (rect.left + rect.width)}px`, // 距離 body 右邊的距離
       top: `${rect.top}px`,
       padding: '0',
     });

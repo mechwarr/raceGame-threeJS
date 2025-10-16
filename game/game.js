@@ -386,6 +386,10 @@ async function initThree() {
       getGameId: () => currentGameId,
       getRanking: () => getRankingLabels(),
       getTop5: () => getTop5Labels(),
+      getIsMuted: () => {
+          const volume = audioSystem.getMasterVolume ? audioSystem.getMasterVolume() : 1;
+          return Number(volume) <= 0;
+      },
     },
     hooks: {
       onMute: (isMuted) => {
