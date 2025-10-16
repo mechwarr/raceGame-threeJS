@@ -37,10 +37,10 @@ export class RaceEngine {
       noSpeedLimitInStrong: true,
       MAX_POS_FACTOR: 1, // 限制 posFactor 最大倍率為 1
     };
-    this.SPEED_CONF = { vMin: 100, vMax: 150, blend: 0.10, noiseScaleStart: 1.0, noiseScaleSetup: 0.4, noiseScaleLock: 0.2 };
+    this.SPEED_CONF = { vMin: 100, vMax: 170, blend: 0.10, noiseScaleStart: 1.0, noiseScaleSetup: 0.4, noiseScaleLock: 0.2 };
     this.PHASE_SPLITS = { start: 0.60, setup: 0.85, lock: 0.97 };
     this.RHYTHM_CONF = {
-      segment: { durMin: 0.9, durMax: 1.4, multMin: 0.70, multMax: 1.0, easeSec: 0.25 },
+      segment: { durMin: 0.5, durMax: 1.4, multMin: 0.70, multMax: 1.20, easeSec: 0.25 },
       burst: { probPerSec: 0.45, ampMin: 0.06, ampMax: 0.10, durSec: 0.8, cooldownSec: 0.6 },
       weightByPhase: { start: 1.00, mid: 1.00, setup: 0.30, lock: 0.12 },
       bounds: { min: 0.75, max: 1.35 },
