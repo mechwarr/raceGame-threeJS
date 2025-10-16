@@ -1,6 +1,7 @@
 // FinishedView：置中於 three-canvas 的結果面板（前五名、依色票顯示、水平排列；16:9 RWD）
+// 新增：右上角加入一個正方形、等比縮放的 TopBar（包含聲音按鈕）
 export class FinishedView {
-  mount(root, ctx){
+  mount(root, ctx) {
     this.ctx = ctx;
     this.root = root;
     this.canvas = document.getElementById('three-canvas') || root;
@@ -11,6 +12,9 @@ export class FinishedView {
     this.ITEMS = 5;                  // 錦旗數量（最多 5）
     // 每個錦旗容器的寬度百分比（平均分配）
     this.ITEM_WIDTH_PERCENT = (100 - (this.ITEMS - 1) * this.GAP_PERCENT) / this.ITEMS; // 例如 18.4%
+
+    // 呼叫初始化 TopBar 的邏輯
+    this._initTopBar();
 
     // 中央面板：固定定位、置中；大小在 _positionToCanvas 依 16:9 計算
     this.panel = document.createElement('div');
@@ -39,7 +43,7 @@ export class FinishedView {
       const cy = rect.top + rect.height / 2;
 
       // 在 canvas 內取能容納的 16:9 最大框
-      const maxW = rect.width  * this.PANEL_SCALE;
+      const maxW = rect.width * this.PANEL_SCALE;
       const maxH = rect.height * this.PANEL_SCALE;
       let panelW = maxW;
       let panelH = panelW * 9 / 16;
@@ -53,7 +57,7 @@ export class FinishedView {
 
       Object.assign(this.panel.style, {
         left: `${cx}px`,
-        top:  `${cy}px`,
+        top: `${cy}px`,
         width: `${panelW}px`,
         height: `${panelH}px`,
         gap: `${this.GAP_PERCENT}%`,   // % of panel width
@@ -61,6 +65,9 @@ export class FinishedView {
 
       // 不必重建 DOM（因為大多用 %），但要更新字級等需 px 的部分
       this._applyResponsiveFont();
+
+      // 呼叫 TopBar 佈局更新
+      this._updateTopBarLayout(rect);
     };
 
     this._renderTop5 = () => {
@@ -75,7 +82,7 @@ export class FinishedView {
         Object.assign(pennantContainer.style, {
           position: 'relative',
           width: `${this.ITEM_WIDTH_PERCENT}%`, // 以 panel 寬度的百分比
-          // 若想所有錦旗等高，可開啟固定比例（依你的 PNG 外觀調整）
+          // 若想所有錦旗等高，可開啟固定比例（依圖比例微調）
           // aspectRatio: '3 / 4',
           height: 'auto',
           textAlign: 'center',
@@ -86,7 +93,7 @@ export class FinishedView {
         });
 
         const pennantImg = document.createElement('img');
-        pennantImg.src = `/public/finished/pennant0${i+1}.png`;
+        pennantImg.src = `/public/finished/pennant0${i + 1}.png`;
         Object.assign(pennantImg.style, {
           width: '100%',   // 填滿容器寬
           height: 'auto',  // 高度依圖片比例
@@ -141,18 +148,107 @@ export class FinishedView {
     // 監聽尺寸/捲動/Canvas 變更
     this._onResize = () => { this._positionToCanvas(); };
     this._onScroll = () => { this._positionToCanvas(); };
-    window.addEventListener('resize', this._onResize, { passive:true });
-    window.addEventListener('scroll', this._onScroll, { passive:true });
+    window.addEventListener('resize', this._onResize, { passive: true });
+    window.addEventListener('scroll', this._onScroll, { passive: true });
     this._ro = new ResizeObserver(() => this._positionToCanvas());
     this._ro.observe(this.canvas);
   }
 
-  onTick(){ /* 完賽結果固定，不需更新 */ }
+  // ---- TopBar 相關方法 (正方形、高佔 10%、右上角) ----
 
-  unmount(){
+  _initTopBar() {
+    // 聲音按鈕
+    this.soundBtn = document.createElement('button');
+    this._muted = false;
+    this._syncSoundBtnText();
+
+    Object.assign(this.soundBtn.style, {
+      border: 'none',
+      background: '#141a22',
+      color: '#e7eef6',
+      cursor: 'pointer',
+      whiteSpace: 'nowrap',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '0',
+      fontFamily: 'sans-serif'
+    });
+    this.soundBtn.addEventListener('click', () => {
+      this._muted = !this._muted;
+      this.ctx.hooks.onMute?.(this._muted);
+      this._syncSoundBtnText();
+    });
+
+    // TopBar 容器 (正方形)
+    this.bar = document.createElement('div');
+    Object.assign(this.bar.style, {
+      position: 'fixed',
+      boxSizing: 'border-box',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center', // 按鈕置中
+      background: 'rgba(0,0,0,0.85)',
+      color: '#e7eef6',
+      border: 'none',
+      zIndex: 1000,
+      padding: '0',
+    });
+
+    this.bar.append(this.soundBtn);
+    document.body.appendChild(this.bar);
+  }
+
+  /**
+   * 計算並應用 TopBar 的動態尺寸和定位
+   * @param {DOMRect} rect canvas 的 BoundingClientRect
+   */
+  _updateTopBarLayout(rect) {
+    if (!this.bar || !rect) return;
+
+    // 1. 計算 TopBar 的基準尺寸（邊長為 window.innerHeight 的 10%）
+    const barSize = window.innerHeight * 0.10; // 正方形的邊長
+
+    // 2. 計算所有衍生尺寸
+    const btnSize = barSize * 0.75; // 按鈕大小
+    const btnFontSize = barSize * 0.5; // 按鈕圖示大小
+    const barPadding = barSize * 0.125; // TopBar 離 canvas 邊界的間距
+
+    // 3. 應用樣式到 TopBar (定位在右上角)
+    Object.assign(this.bar.style, {
+      width: `${barSize}px`, // 寬度等於高度，變為正方形
+      height: `${barSize}px`,
+
+      right: `${rect.left}px`,
+      top: `${rect.top}px`,
+      padding: '0',
+    });
+
+    // 4. 應用樣式到 Sound按鈕 
+    Object.assign(this.soundBtn.style, {
+      width: `${btnSize}px`,
+      height: `${btnSize}px`,
+      fontSize: `${btnFontSize}px`,
+      borderRadius: `${btnSize * 0.2}px`,
+    });
+  }
+
+  _syncSoundBtnText() {
+    this.soundBtn.textContent = this._muted ? '🔇' : '🔊';
+  }
+
+  onTick() { /* 完賽結果固定，不需更新 */ }
+
+  unmount() {
     window.removeEventListener('resize', this._onResize);
     window.removeEventListener('scroll', this._onScroll);
     this._ro?.disconnect();
     this.panel?.remove();
+
+    // 清理 TopBar 元素
+    if (this.bar) {
+      this.bar.remove();
+      this.bar = null;
+    }
   }
 }
