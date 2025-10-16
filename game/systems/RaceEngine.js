@@ -769,7 +769,7 @@ export class RaceEngine {
   }
 
   // 對外查詢
-  getFinalRank() { return this.forcedTop5Rank.slice(); }
+  getFinalRank() { return this.finalRank.slice(); }
   getFinishedTimes() { return this.finishedTimes.slice(); }
   getLockStage() { return this.lockStage; }
   isSlowMoActive() { return !!this.SLOWMO.active; }

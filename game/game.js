@@ -37,7 +37,7 @@ const postToHost = (type, payload = {}) => {
     payload: payload
   };
   // targetOrigin 使用 '*'，因為 Host 端已經過濾 ev.origin
-  window.parent.postMessage(msg, '*'); 
+  window.parent.postMessage(msg, '*');
   log(`[Post] Sent to Host: ${type}`, payload);
 };
 
@@ -677,7 +677,7 @@ function doStartRace() {
 
   setGameState(STATE.Running);
   ui?.show?.('game');
-  audioSystem.loadBGM('../public/sound/Rossini - William Tell Overture (Synths).mp3').catch(() => {});
+  audioSystem.loadBGM('../public/sound/Rossini - William Tell Overture (Synths).mp3').catch(() => { });
   audioSystem.setBGMVolume(1.0);
   log('[State] Running | target duration =', RACE.durationSec ? `${RACE.durationSec.toFixed(2)}s` : '(auto)');
 }
@@ -738,7 +738,7 @@ async function doResetAndStart(rank, countdown, durationMinSec, durationMaxSec) 
 
   // 4) 倒數 → 開始（可 await）
   window.GameReadyViewAPI?.hideWaitingPanel?.();
-  
+
   const secs = Math.max(0, Math.floor(countdown || 0));
   if (secs > 0) {
     playerStandby(secs);              // 準備走位（同步）
@@ -829,6 +829,15 @@ function onGamePause() {
   }
 }
 
+function onGameResume() {
+  if (gameState === STATE.Paused) {
+    setGameState(STATE.Running);
+    // ★ 調用 AudioSystem 的恢復播放方法
+    audioSystem.onGameResumed();
+    log('[State] Resumed');
+  }
+}
+
 let countdownOverlay; // 若你的其他模組會塞此節點，保留避免報錯
 
 function onGameEnd() {
@@ -860,12 +869,12 @@ function onGameEnd() {
 // ★★★ 新增/取代：原生 onMsg 函數，負責接收 Host 指令並解析 payload ★★★
 function onMsg(ev) {
   // 1. 驗證來源：確保是來自 Parent Window
-  if (ev.source !== window.parent) return; 
+  if (ev.source !== window.parent) return;
 
   const msg = ev.data;
   // 2. 驗證訊息格式與類型
   // 【修改點 5】：host: -> game:
-  if (!msg || typeof msg !== 'object' || !msg.type || !msg.type.startsWith('game:')) return; 
+  if (!msg || typeof msg !== 'object' || !msg.type || !msg.type.startsWith('game:')) return;
 
   const payload = msg.payload || {};
   log('[Host Msg]', msg.type, payload);
@@ -893,7 +902,10 @@ function onMsg(ev) {
     case 'game:pause':
       onGamePause();
       break;
-    case 'game:ended': 
+    case 'game:resume':
+      onGameResume();
+      break;
+    case 'game:ended':
       onGameEnd();
       break;
     case 'camera:config':

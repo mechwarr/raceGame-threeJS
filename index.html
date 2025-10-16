@@ -142,6 +142,7 @@
   <div class="control-panel">
     <button id="btn-create">建立遊戲</button>
     <button id="btn-start" disabled>開始遊戲</button>
+    <button id="btn-resume" disabled>繼續遊戲</button>
     <button id="btn-pause" disabled>暫停遊戲</button>
     <button id="btn-end" disabled>結束遊戲</button>
     <span class="state-chip" id="state-readout">state: idle</span>
@@ -172,6 +173,7 @@
     const stateReadout = document.getElementById('state-readout');
     const btnCreate = document.getElementById('btn-create');
     const btnStart = document.getElementById('btn-start');
+    const btnResume = document.getElementById('btn-resume');
     const btnPause = document.getElementById('btn-pause');
     const btnEnd = document.getElementById('btn-end');
 
@@ -193,6 +195,7 @@
       const s = game?.state ?? 'idle';
       stateReadout.textContent = 'state: ' + s;
       btnStart.disabled = !game || s === 'destroyed';
+      btnResume.disabled = !(game && ['paused'].includes(s));
       btnPause.disabled = !(game && ['ready', 'running', 'paused'].includes(s));
       btnEnd.disabled = !game || s === 'destroyed';
     }
@@ -239,6 +242,7 @@
     });
 
     btnPause.addEventListener('click', () => { RaceGame.GetGame()?.PauseGame(); refreshUI(); });
+    btnResume.addEventListener('click', () => { RaceGame.GetGame()?.ResumeGame(); refreshUI(); });
     btnEnd.addEventListener('click', () => { RaceGame.GetGame()?.DisposeGame(); refreshUI(); });
 
     refreshUI();

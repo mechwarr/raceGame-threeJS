@@ -150,7 +150,16 @@
         game.PauseGame();
       });
 
-      // 3. 監聽來自 Native 的結束指令 (game:destroy)
+      // 3. 監聽來自 Native 的恢復指令 (game:resume)
+      bridge.on('game:resume', (payload, originalMessage) => {
+        hostLog(`[Native Cmd] 收到暫停指令: game:resume`);
+        if (originalMessage?.id) {
+          bridge.reply(originalMessage, { success: true, message: 'Game pause command received.' });
+        }
+        game.ResumeGame();
+      });
+
+      // 4. 監聽來自 Native 的結束指令 (game:destroy)
       bridge.on('game:destroy', (payload, originalMessage) => {
         hostLog(`[Native Cmd] 收到結束指令: game:destroy`);
         if (originalMessage?.id) {

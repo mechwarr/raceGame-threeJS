@@ -207,6 +207,15 @@
       this._setState('paused');
     }
 
+    /** 恢復暫停 */
+    ResumeGame() {
+      this._assertNotDestroyed();
+      if (!this._iframe) throw new Error('尚未建立遊戲');
+      // host:pause -> game:resume
+      U.postToGame(this._iframe.contentWindow, { type: 'game:resume', payload: {} }, this.targetOrigin);
+      this._setState('running');
+    }
+
     /** 結束並釋放資源 */
     DisposeGame() {
       this._assertNotDestroyed();
