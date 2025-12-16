@@ -69,7 +69,7 @@ export class RaceEngine {
     this.speedState = { v: [] };
     this.rhythmState = null;
     this.sprintState = null;
-    
+
     // 技能狀態 (新增 startT, endT, 及 Rank Boost VFX 狀態)
     this.skillState = {
       active: [],
@@ -85,7 +85,7 @@ export class RaceEngine {
     this.finalRank = [];
     this.lockStage = this.LOCK_STAGE.None;
     this.leader = null;
-    this.forcedTop5Rank = null; 
+    this.forcedTop5Rank = null;
     this._flags = { firstHorseFinished: false };
     this.slowmoSnapshotV = [];
     this.postFinishSpeedUp = false;
@@ -118,13 +118,13 @@ export class RaceEngine {
       endT: Array(N).fill(-999),
       isRankBoostingVfxActive: Array(N).fill(false), // 【初始化】
     };
-    
+
     // 確保所有馬匹的特效在開始前都是關閉的
-    for(let i=0; i<N; i++) {
-        const p = this._getHorse(i);
-        if (p && typeof p.stopSpeedVFX === 'function') {
-            p.stopSpeedVFX();
-        }
+    for (let i = 0; i < N; i++) {
+      const p = this._getHorse(i);
+      if (p && typeof p.stopSpeedVFX === 'function') {
+        p.stopSpeedVFX();
+      }
     }
 
     this.slowmoSnapshotV = Array(N).fill(null);
@@ -148,20 +148,20 @@ export class RaceEngine {
 
     const N = this.cfg.laneCount;
     for (let i = 0; i < N; i++) {
-        this.finishedTimes[i] = null;
-        // 重置技能狀態
-        this.skillState.active[i] = false;
-        this.skillState.multiplier[i] = 1.0;
-        this.skillState.lastEndAt[i] = -999;
-        this.skillState.startT[i] = -999; 
-        this.skillState.endT[i] = -999;   
-        this.skillState.isRankBoostingVfxActive[i] = false; // 【重置】
+      this.finishedTimes[i] = null;
+      // 重置技能狀態
+      this.skillState.active[i] = false;
+      this.skillState.multiplier[i] = 1.0;
+      this.skillState.lastEndAt[i] = -999;
+      this.skillState.startT[i] = -999;
+      this.skillState.endT[i] = -999;
+      this.skillState.isRankBoostingVfxActive[i] = false; // 【重置】
 
-        // 確保重置時特效關閉
-        const p = this._getHorse(i);
-        if (p && typeof p.stopSpeedVFX === 'function') {
-            p.stopSpeedVFX();
-        }
+      // 確保重置時特效關閉
+      const p = this._getHorse(i);
+      if (p && typeof p.stopSpeedVFX === 'function') {
+        p.stopSpeedVFX();
+      }
     }
     this.finalRank.length = 0;
 
@@ -202,8 +202,8 @@ export class RaceEngine {
 
     const isPostFinish = this.postFinishSpeedUp;
     if (!isPostFinish) {
-        this._tryTriggerSprint(elapsed);
-        this._tryTriggerSkillSprint(elapsed); // 技能衝刺觸發
+      this._tryTriggerSprint(elapsed);
+      this._tryTriggerSkillSprint(elapsed); // 技能衝刺觸發
     }
     this._updateSprintLifecycle(elapsed);
     this._updateSkillSprint(dt, elapsed); // 技能衝刺的更新
@@ -225,7 +225,7 @@ export class RaceEngine {
     const xTarget = (isLocking || isPostFinish) ? this._computeShadowTargets(desiredOrder) : null;
 
     const nextV = Array(N).fill(0);
-    const factors = Array(N).fill(1.0); // 【新增】暫存 Lock Factor 以供 Vfx 判斷
+    const factors = Array(N).fill(1.0);
 
     for (let i = 0; i < N; i++) {
       const p = this._getHorse(i); if (!p) continue;
@@ -235,6 +235,9 @@ export class RaceEngine {
         continue;
       }
 
+      // ==========================================================
+      // 【PostFinish 階段速度計算】
+      // ==========================================================
       if (isPostFinish) {
         const slowmoV = this.slowmoSnapshotV[i] || this.speedState.v[i];
         const normalV = this.baseSpeeds[i];
@@ -247,19 +250,67 @@ export class RaceEngine {
         if (this.forcedTop5Rank) {
           const stageGainGuard = this.LOCK.gain.Guard;
           const factor = this._lockSpeedFactorFor(i, stageGainGuard, desiredRankMap, currRankMap, xTarget);
-          factors[i] = factor; // 【儲存 factor】
+          factors[i] = factor;
           vStar *= factor;
         }
 
-        vStar *= this.skillState.multiplier[i]; 
+        // 必須乘上技能乘數
+        vStar *= this.skillState.multiplier[i];
 
         vStar = this.cfg.clamp(vStar, this.SPEED_CONF.vMin, this.SPEED_CONF.vMax);
         nextV[i] = vStar;
 
-      } else {
-        const noiseScale = isLocking ? this.SPEED_CONF.noiseScaleLock
-          : this._inPhase('setup', elapsed) ? this.SPEED_CONF.noiseScaleSetup
-            : this.SPEED_CONF.noiseScaleStart;
+      }
+
+      // ==========================================================
+      // 【Locking 階段速度計算 (強制排名校正的核心)】
+      // ==========================================================
+      else if (isLocking) {
+        const noiseScale = this.SPEED_CONF.noiseScaleLock;
+
+        // 基礎速度為馬匹 baseSpeed
+        let vStar = this.baseSpeeds[i];
+
+        // **********************************************
+        // 【關鍵修改】：Lock 階段忽略所有節奏 (Rhythm) 和傳統衝刺 (Sprint) 
+        // 只有在強制排名模式下，rankFactor 才是唯一的主導因素
+        // **********************************************
+
+        if (this.forcedTop5Rank && stageGain) {
+          const factor = this._lockSpeedFactorFor(i, stageGain, desiredRankMap, currRankMap, xTarget);
+          factors[i] = factor;
+          vStar *= factor;
+        }
+
+        // 可選：無強制排名時的 Lock 階段速度提升 (原邏輯保留)
+        else {
+          vStar *= 1.05;
+        }
+
+        // 必須乘上技能乘數 (不論有無 forcedTop5)
+        vStar *= this.skillState.multiplier[i];
+
+        // 夾限
+        if (this.lockStage === this.LOCK_STAGE.LockStrong && this.LOCK.noSpeedLimitInStrong) {
+          vStar = Math.max(this.SPEED_CONF.vMin, vStar);
+        } else {
+          vStar = this.cfg.clamp(vStar, this.SPEED_CONF.vMin, this.SPEED_CONF.vMax * 1.5);
+        }
+
+        // 平滑靠攏
+        const vPrev = Number.isFinite(this.speedState.v[i]) ? this.speedState.v[i] : this.baseSpeeds[i];
+        const vNow = vPrev + (vStar - vPrev) * this.SPEED_CONF.blend;
+        nextV[i] = vNow;
+
+        p.group.position.y = Math.max(0, Math.abs(this.cfg.noise(t, i)) * 0.2 * noiseScale);
+      }
+
+      // ==========================================================
+      // 【非 Lock 階段速度計算 (原始邏輯保留)】
+      // ==========================================================
+      else {
+        const noiseScale = this._inPhase('setup', elapsed) ? this.SPEED_CONF.noiseScaleSetup
+          : this.SPEED_CONF.noiseScaleStart;
 
         let vStar = this.baseSpeeds[i];
 
@@ -276,26 +327,8 @@ export class RaceEngine {
         // 技能衝刺倍率 (新系統)
         vStar *= this.skillState.multiplier[i];
 
-
-        // Lock 名次回授（含 forcedTop5）
-        if (this.forcedTop5Rank && isLocking && stageGain) {
-          const factor = this._lockSpeedFactorFor(i, stageGain, desiredRankMap, currRankMap, xTarget);
-          factors[i] = factor; // 【儲存 factor】
-          vStar *= factor;
-        }
-        
-        // 可選：無強制排名時的 Lock 階段速度提升
-        if (isLocking && !this.forcedTop5Rank) {
-             vStar *= 1.05; 
-             vStar *= this.skillState.multiplier[i]; 
-        }
-
         // 夾限
-        if (this.lockStage === this.LOCK_STAGE.LockStrong && this.LOCK.noSpeedLimitInStrong) {
-          vStar = Math.max(this.SPEED_CONF.vMin, vStar);
-        } else {
-          vStar = this.cfg.clamp(vStar, this.SPEED_CONF.vMin, this.SPEED_CONF.vMax);
-        }
+        vStar = this.cfg.clamp(vStar, this.SPEED_CONF.vMin, this.SPEED_CONF.vMax);
 
         // 平滑靠攏
         const vPrev = Number.isFinite(this.speedState.v[i]) ? this.speedState.v[i] : this.baseSpeeds[i];
@@ -306,59 +339,107 @@ export class RaceEngine {
       }
     }
 
+    // 柔性分離 (適用於 Lock 或 PostFinish 階段，保持平滑)
     if (isLocking || isPostFinish) this._applySoftSeparation(currOrder, nextV, desiredRankMap);
-    
+
+    // ==========================================================
+    // 【絕對排名錨定校正】 - 確保 100% 達成 forcedTop5Rank 的關鍵
+    // 此邏輯在 Lock 階段且有 forcedTop5Rank，且馬匹達到終點前 1.0 單位時啟動。
+    // ==========================================================
+    let isAbsoluteAnchorActive = false;
+    if (this.forcedTop5Rank && (isLocking || isPostFinish) && xTarget) {
+      // 檢查領導者是否已進入錨定區域
+      const leaderX = this._getHorseX(this.leader);
+      if (leaderX >= this.LOCK.ABSOLUTE_ANCHOR_X) {
+        isAbsoluteAnchorActive = true;
+
+        for (let i = 0; i < N; i++) {
+          const p = this._getHorse(i);
+          if (!p || this.finishedTimes[i] != null) continue;
+
+          const wantRank = desiredRankMap[i]; // 1-based rank
+          if (wantRank == null) continue; // 只有在 desiredOrder 中的馬匹才處理
+
+          const targetX = xTarget[wantRank];
+
+          // 計算目標速度以保持在錨點（這不是必需的，但可以讓速度更平滑）
+          const currentX = this._getHorseX(i);
+          const requiredV = (targetX - currentX) / Math.max(1e-4, dt);
+
+          // 讓馬匹位置直接趨近於目標位置
+          if (Math.abs(currentX - targetX) > 0.001) {
+            // 使用 Lerp 進行平滑的位置修正，以避免突然跳躍
+            const correctedX = this.cfg.lerp(currentX, targetX, 0.5); // 0.5是一個強大的 Lerp 因子
+            p.group.position.x = correctedX;
+          }
+
+          // 由於我們直接修正了位置，nextV[i] 僅用於動畫和下一幀的基礎，
+          // 但我們可以將其設置為一個能保持在目標位置的速度。
+          // 為了保留動畫平滑，我們繼續使用原來的 nextV，但位置已被強制校正。
+          // 讓 nextV 趨近 requiredV，確保位置被修正後，速度能跟上。
+          nextV[i] = this.cfg.lerp(nextV[i], requiredV, 0.7);
+        }
+      }
+    }
+
+    // Log 點：追蹤絕對錨定狀態
+    if (isAbsoluteAnchorActive) {
+      this.log(`[ANCHOR ACTIVE] Absolute Position Anchoring is active.`);
+    }
+
+    // ==========================================================
+
     let firstJustFinished = false;
     for (let i = 0; i < N; i++) {
       const p = this._getHorse(i); if (!p) continue;
-      
+
       this.speedState.v[i] = nextV[i];
       const vVisual = nextV[i] * dtScale;
-      const maxV = this.SPEED_CONF.vMax; 
+      const maxV = this.SPEED_CONF.vMax;
       const pct = this.cfg.clamp(vVisual / Math.max(1e-6, maxV), 0, 1);
       const animSpeed = pct * 7;
       if (typeof p?.setAnimationSpeed === 'function') {
         p.setAnimationSpeed(animSpeed);
       }
       p.group.position.x += nextV[i] * dt * dtScale;
-      p.update(dt * dtScale); 
+      p.update(dt * dtScale);
 
+      // 完賽判斷
       if (this.finishedTimes[i] == null && p.group.position.x >= this.cfg.finishDetectX) {
         this._stampFinish(i, t);
+        // 【關鍵邏輯保留】：只有在第一匹馬完賽時才標記
         if (!firstJustFinished) firstJustFinished = true;
       }
 
       // ==========================================================
-      // 【新增：排名引導特效控制】
+      // 【排名引導特效控制 (邏輯保留)】
       // ==========================================================
-      const currentFactor = factors[i]; // 獲取 Lock 因子 (如果是 PostFinish 也是 Lock.Guard 因子)
-      const isCurrentlyBoosting = currentFactor > 1.10; // 加速閾值：速度提升超過 10%
-      
+      const currentFactor = factors[i];
+      const isCurrentlyBoosting = currentFactor > 1.10;
+
       const isSkillActive = this.skillState.active[i];
       let vfxShouldBeActive = false;
 
-      // 只有在 Lock 階段 (或 PostFinish) 且有強制排名時才考慮此特效
       if ((isLocking || isPostFinish) && this.forcedTop5Rank) {
-          if (isCurrentlyBoosting && !isSkillActive) {
-              // 條件：系統正在加速 AND 沒有主動技能衝刺在作用
-              vfxShouldBeActive = true; 
-          }
+        if (isCurrentlyBoosting && !isSkillActive) {
+          vfxShouldBeActive = true;
+        }
       }
-      
+
       if (vfxShouldBeActive && !this.skillState.isRankBoostingVfxActive[i]) {
-          // 啟動特效 (只在從非加速狀態轉為加速狀態時播放)
-          if (p && typeof p.runSpeedVFX === 'function') {
-              p.runSpeedVFX(true); // 傳入 true 確保循環播放
-              this.skillState.isRankBoostingVfxActive[i] = true;
-              this.log(`[VFX START] Horse ${i+1} starts Rank Boost VFX (Factor: ${currentFactor.toFixed(2)})`); // Log 點
-          }
+        if (p && typeof p.runSpeedVFX === 'function') {
+          // 在 Lock 階段，如果排名引導開始，則覆蓋技能特效
+          if (this.skillState.active[i]) p.stopSpeedVFX();
+          p.runSpeedVFX(true);
+          this.skillState.isRankBoostingVfxActive[i] = true;
+          this.log(`[VFX START] Horse ${i + 1} starts Rank Boost VFX (Factor: ${currentFactor.toFixed(2)})`);
+        }
       } else if (!vfxShouldBeActive && this.skillState.isRankBoostingVfxActive[i]) {
-          // 關閉特效 (加速停止且沒有技能衝刺接管時關閉)
-          if (p && typeof p.stopSpeedVFX === 'function' && !isSkillActive) {
-              p.stopSpeedVFX();
-              this.skillState.isRankBoostingVfxActive[i] = false;
-              this.log(`[VFX END] Horse ${i+1} stops Rank Boost VFX`); // Log 點
-          }
+        if (p && typeof p.stopSpeedVFX === 'function' && !isSkillActive) {
+          p.stopSpeedVFX();
+          this.skillState.isRankBoostingVfxActive[i] = false;
+          this.log(`[VFX END] Horse ${i + 1} stops Rank Boost VFX`);
+        }
       }
       // ==========================================================
     }
@@ -368,7 +449,9 @@ export class RaceEngine {
       if (newL && newL !== this.leader) this.leader = newL;
     }
 
+    // 【關鍵邏輯保留】：第一匹馬完賽後的 Slowmo, PostFinish, 技能強制關閉
     if (firstJustFinished) {
+      this.finalRank = this.prioritizeArray(this.finalRank, this.forcedTop5Rank);
       this._flags.firstHorseFinished = true;
       if (this.SLOWMO.active) {
         this.SLOWMO.active = false;
@@ -378,25 +461,25 @@ export class RaceEngine {
           this.lockStage = this.LOCK_STAGE.FinishGuard;
         }
       }
-      // 強制結束所有技能衝刺，並呼叫 stopSpeedVFX()
-      for(let i=0; i<N; i++) {
-          const p = this._getHorse(i);
-          if (this.skillState.active[i]) {
-              this.skillState.active[i] = false;
-              this.skillState.multiplier[i] = 1.0;
-              this.skillState.lastEndAt[i] = elapsed;
-              if (p && typeof p.stopSpeedVFX === 'function') {
-                  p.stopSpeedVFX();
-              }
+      // 強制結束所有衝刺，並呼叫 stopSpeedVFX()
+      for (let i = 0; i < N; i++) {
+        const p = this._getHorse(i);
+        if (this.skillState.active[i]) {
+          this.skillState.active[i] = false;
+          this.skillState.multiplier[i] = 1.0;
+          this.skillState.lastEndAt[i] = elapsed;
+          if (p && typeof p.stopSpeedVFX === 'function') {
+            p.stopSpeedVFX();
           }
-          // 【新增：強制關閉所有排名引導特效】
-          if (this.skillState.isRankBoostingVfxActive[i]) {
-              if (p && typeof p.stopSpeedVFX === 'function') {
-                  p.stopSpeedVFX();
-              }
-              this.skillState.isRankBoostingVfxActive[i] = false;
-              this.log(`[VFX END - Forced] Horse ${i+1} stops Rank Boost VFX at finish`); // Log 點
+        }
+        // 強制關閉所有排名引導特效
+        if (this.skillState.isRankBoostingVfxActive[i]) {
+          if (p && typeof p.stopSpeedVFX === 'function') {
+            p.stopSpeedVFX();
           }
+          this.skillState.isRankBoostingVfxActive[i] = false;
+          this.log(`[VFX END - Forced] Horse ${i + 1} stops Rank Boost VFX at finish`);
+        }
       }
     }
 
@@ -406,42 +489,46 @@ export class RaceEngine {
   // ====================================================================
   // 核心速度因子計算函數 (略，無變動)
   // ====================================================================
-
   _lockSpeedFactorFor(i, stageGain, desiredRankMap, currentRankMap, xTarget) {
     const currRank = currentRankMap[i];
     const wantRank = desiredRankMap[i];
     const eRank = currRank - wantRank;
 
     let rankFactor;
-    if (eRank > 0) rankFactor = 1 + stageGain.boost * eRank;
-    else if (eRank < 0) rankFactor = 1 / (1 + stageGain.brake * Math.abs(eRank));
+    // 增加 rankFactor 的敏感度
+    if (eRank > 0) rankFactor = 1 + stageGain.boost * eRank * 2.0; // 放大 2.0 倍
+    else if (eRank < 0) rankFactor = 1 / (1 + stageGain.brake * Math.abs(eRank) * 2.0); // 放大 2.0 倍
     else rankFactor = 1;
 
     const x = this._getHorseX(i);
     const xt = xTarget[wantRank];
     const ePos = xt - x;
-    
+
     // 應用 posFactor 限制
-    const posFactorRaw = 1 + stageGain.pos * ePos;
-    const posFactor = this.cfg.clamp(posFactorRaw, 0.4, this.LOCK.MAX_POS_FACTOR); 
+    const posFactorRaw = 1 + stageGain.pos * ePos * 1.5; // 位置修正也放大
+    const posFactor = this.cfg.clamp(posFactorRaw, 0.5, this.LOCK.MAX_POS_FACTOR);
 
     const inTop5 = this.forcedTop5Rank ? this.forcedTop5Rank.map(n => this.cfg.clamp((n | 0) - 1, 0, this.cfg.laneCount - 1)).includes(i) : false;
     const currTop5 = currRank <= 5;
     let forcedFactor = 1;
-    
+
+    // 增加 Top5 矯正的支配性
     if (!inTop5 && currTop5) {
       const severity = (6 - currRank);
-      forcedFactor = 1 / (1 + stageGain.forcedBrake * Math.max(0, severity));
+      // 極端懲罰：確保非目標 Top5 快速跌出
+      forcedFactor = 1 / (1 + stageGain.forcedBrake * Math.max(0, severity) * 3.0);
     } else if (inTop5 && currRank > 5) {
       const severity = (currRank - 5);
-      forcedFactor = 1 + stageGain.forcedBoost * Math.max(0, severity);
+      // 極端獎勵：確保目標 Top5 快速衝進
+      forcedFactor = 1 + stageGain.forcedBoost * Math.max(0, severity) * 3.0;
     }
-    
-    const finalFactor = this.cfg.clamp(rankFactor * posFactor * forcedFactor, 0.25, 3.5);
+
+    // 放大總體修正幅度 (確保能壓倒基礎速度差異)
+    const finalFactor = this.cfg.clamp(rankFactor * posFactor * forcedFactor, 0.1, 5.0);
 
     return finalFactor;
   }
-  
+
   // ====================================================================
   // 技能衝刺輔助函數 (含 VFX 和 Log) (略，無變動)
   // ====================================================================
@@ -453,35 +540,35 @@ export class RaceEngine {
 
     const order = this._computeCurrentOrderIdx();
     const N = this.cfg.laneCount;
-    const minRank = this.SKILL.MIN_RANK; 
+    const minRank = this.SKILL.MIN_RANK;
     const triggerProb = this.SKILL.TRIGGER_PROB / 60;
 
     for (let rank = minRank; rank <= N; rank++) {
-      const i = order[rank - 1]; 
+      const i = order[rank - 1];
 
       if (this.skillState.active[i]) continue;
       if (nowSec - this.skillState.lastEndAt[i] < this.SKILL.COOLDOWN) continue;
-      
+
       if (Math.random() < triggerProb) {
         this.skillState.active[i] = true;
         this.skillState.multiplier[i] = 1.0;
-        
+
         // 【核心變更：記錄時間】
         this.skillState.startT[i] = nowSec;
-        this.skillState.endT[i] = nowSec + this.SKILL.PEAK_TIME; 
+        this.skillState.endT[i] = nowSec + this.SKILL.PEAK_TIME;
 
         // 【Log 點 1: 技能衝刺啟動】
-        this.log(`[SKILL START] Horse ${i+1} (Rank ${rank}) at t=${nowSec.toFixed(2)}s. End time: ${this.skillState.endT[i].toFixed(2)}s`);
+        this.log(`[SKILL START] Horse ${i + 1} (Rank ${rank}) at t=${nowSec.toFixed(2)}s. End time: ${this.skillState.endT[i].toFixed(2)}s`);
 
         // 修正：啟動 HorsePlayer 上的特效
         const p = this._getHorse(i);
         if (p && typeof p.runSpeedVFX === 'function') {
-            // 注意：這裡應該先停止潛在的排名引導特效，雖然 isRankBoostingVfxActive 的邏輯會處理它
-            if (this.skillState.isRankBoostingVfxActive[i]) {
-                p.stopSpeedVFX();
-                this.skillState.isRankBoostingVfxActive[i] = false;
-            }
-            p.runSpeedVFX(true); // 傳入 true 確保循環
+          // 注意：這裡應該先停止潛在的排名引導特效，雖然 isRankBoostingVfxActive 的邏輯會處理它
+          if (this.skillState.isRankBoostingVfxActive[i]) {
+            p.stopSpeedVFX();
+            this.skillState.isRankBoostingVfxActive[i] = false;
+          }
+          p.runSpeedVFX(true); // 傳入 true 確保循環
         }
       }
     }
@@ -493,49 +580,49 @@ export class RaceEngine {
     const maxMult = 1.0 + rate;
     const accelTime = this.SKILL.ACCEL_TIME;
     const peakTime = this.SKILL.PEAK_TIME;
-    
+
     for (let i = 0; i < N; i++) {
       if (!this.skillState.active[i]) continue;
-      
+
       const tElapsed = nowSec - this.skillState.startT[i];
-      
+
       let nextMult;
 
       if (tElapsed < accelTime) {
         // 階段一：加速 
         const tNorm = this.cfg.clamp(tElapsed / accelTime, 0, 1);
         nextMult = this.cfg.lerp(1.0, maxMult, tNorm);
-        
+
       } else if (tElapsed < peakTime) {
         // 階段二：平滑減速 
-        
+
         const decayStartT = accelTime;
         const decayDuration = peakTime - accelTime;
-        
+
         if (decayDuration <= 0) {
-            nextMult = maxMult; 
+          nextMult = maxMult;
         } else {
-            const tDecay = tElapsed - decayStartT;
-            const tNorm = this.cfg.clamp(tDecay / decayDuration, 0, 1);
-            nextMult = this.cfg.lerp(maxMult, 1.0, tNorm);
+          const tDecay = tElapsed - decayStartT;
+          const tNorm = this.cfg.clamp(tDecay / decayDuration, 0, 1);
+          nextMult = this.cfg.lerp(maxMult, 1.0, tNorm);
         }
 
       } else {
         // 衝刺結束
         this.skillState.active[i] = false;
-        nextMult = 1.0; 
+        nextMult = 1.0;
         this.skillState.lastEndAt[i] = nowSec;
 
         // 【Log 點 3: 技能衝刺結束】
-        this.log(`[SKILL END] Horse ${i+1} finished skill sprint (Time-based) at t=${nowSec.toFixed(2)}s`);
+        this.log(`[SKILL END] Horse ${i + 1} finished skill sprint (Time-based) at t=${nowSec.toFixed(2)}s`);
 
         // 修正：停止 HorsePlayer 上的特效
         const p = this._getHorse(i);
         if (p && typeof p.stopSpeedVFX === 'function') {
-            p.stopSpeedVFX();
+          p.stopSpeedVFX();
         }
       }
-      
+
       // 更新乘數
       this.skillState.multiplier[i] = nextMult;
     }
@@ -599,7 +686,7 @@ export class RaceEngine {
     } else if (this.lockStage === this.LOCK_STAGE.PreLock) {
       if (pct >= this.LOCK.triggerPct) this.lockStage = this.LOCK_STAGE.LockStrong;
       // 注意：這裡 'the' 應該是 'this'，但因為這是輔助函數，為保持原碼結構僅作標記
-      else if (pct < this.LOCK.releasePct) this.lockStage = this.LOCK_STAGE.None; 
+      else if (pct < this.LOCK.releasePct) this.lockStage = this.LOCK_STAGE.None;
     }
   }
   _inAnyLock() { return this.lockStage !== this.LOCK_STAGE.None; }
@@ -678,9 +765,9 @@ export class RaceEngine {
       this.sprintState.active[i] = true;
       this.sprintState.until[i] = nowSec + dur;
       this.sprintState.usedTimes[i] += 1;
-      
+
       // 【Log 點 2: 傳統衝刺啟動】
-      this.log(`[SPRINT START] Horse ${i+1} (Rank ${rank+1}) chases Horse ${j+1}. Duration: ${dur.toFixed(2)}s`);
+      this.log(`[SPRINT START] Horse ${i + 1} (Rank ${rank + 1}) chases Horse ${j + 1}. Duration: ${dur.toFixed(2)}s`);
     }
   }
   _updateSprintLifecycle(nowSec) {
@@ -690,7 +777,7 @@ export class RaceEngine {
         this.sprintState.lastEndAt[i] = nowSec;
 
         // 【Log 點 4: 傳統衝刺結束】
-        this.log(`[SPRINT END] Horse ${i+1} finished traditional sprint at t=${nowSec.toFixed(2)}s`);
+        this.log(`[SPRINT END] Horse ${i + 1} finished traditional sprint at t=${nowSec.toFixed(2)}s`);
       }
     }
   }
@@ -766,6 +853,28 @@ export class RaceEngine {
     m = this.cfg.clamp(m, this.RHYTHM_CONF.bounds.min, this.RHYTHM_CONF.bounds.max);
     const w = this._rhythmWeightNow(elapsed);
     return this.cfg.lerp(1.0, m, w);
+  }
+  prioritizeArray(a, b) {
+    const priorityMap = new Map();
+    b.forEach((item, index) => {
+      priorityMap.set(item, index);
+    });
+    const sortedA = a.sort((itemA, itemB) => {
+      const priorityA = priorityMap.get(itemA);
+      const priorityB = priorityMap.get(itemB);
+      if (priorityA !== undefined && priorityB !== undefined) {
+        return priorityA - priorityB;
+      }
+      if (priorityA !== undefined) {
+        return -1;
+      }
+      if (priorityB !== undefined) {
+        return 1;
+      }
+      return 0;
+    });
+
+    return sortedA;
   }
 
   // 對外查詢
